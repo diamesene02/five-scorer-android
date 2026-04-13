@@ -87,20 +87,18 @@ jobs:
           REPO="${GITHUB_REPOSITORY}"
           SHORT="${SHORT_SHA:0:7}"
           cp "${{ steps.locate.outputs.apk }}" "five-scorer.apk"
-
-          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
-          fi
-
-          gh release create "$TAG" \
-            "five-scorer.apk" \
-            --repo "$REPO" \
-            --title "Five Scorer APK (latest)" \
-            --notes "APK debug auto-built from main @ ${SHORT}.
+          ls -la five-scorer.apk
+          cat > notes.md <<NOTES
+          APK debug auto-built from main @ ${SHORT}.
 
           **Install**: download five-scorer.apk on your Android, open it -> Install.
 
-          PIN: **1234** | Sync to Supabase enabled."
+          PIN: **1234** | Sync to Supabase enabled.
+          NOTES
+          if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
+            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
+          fi
+          gh release create "$TAG" five-scorer.apk --repo "$REPO" --title "Five Scorer APK (latest)" --notes-file notes.md
 
       - name: Post failure details as issue
         if: failure()
