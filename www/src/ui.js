@@ -125,6 +125,7 @@ let setup = newSetup();
 
 async function goSetup() {
   setup = newSetup();
+  updateTopbarForLive(false);
   show("setup");
   await renderSetup();
 }
@@ -237,7 +238,99 @@ async function startMatch() {
 async function goLive(matchId) {
   currentMatchId = matchId;
   show("live");
+  updateTopbarForLive(true);
   await renderLive();
+}
+
+function updateTopbarForLive(isLive) {
+  const existing = document.getElementById("btn-fin");
+  if (existing) existing.remove();
+  if (isLive) {
+    const topbar = $(".topbar");
+    let endDiv = topbar.querySelector(".topbar-end");
+    if (!endDiv) {
+      endDiv = el("div", { class: "topbar-end" });
+      const badge = $("#sync-badge");
+      topbar.appendChild(endDiv);
+      endDiv.appendChild(badge);
+    }
+    const btn = el("button", { class: "btn-fin", id: "btn-fin", onclick: confirmEnd }, "Fin");
+    endDiv.insertBefore(btn, endDiv.firstChild);
+  }
+}
+
+function confirmEnd() {
+  const overlay = el("div", { class: "confirm-overlay" });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.appendChild(
+    el("div", { class: "confirm-box" }, [
+      el("h2", {}, "Terminer ce match ?"),
+      el("div", { class: "row" }, [
+        el("button", { class: "btn ghost", onclick: () => overlay.remove() }, "Annuler"),
+        el("button", { class: "btn red", onclick: () => { overlay.remove(); goMvp(currentMatchId); } }, "Terminer"),
+      ]),
+    ])
+  );
+  document.body.appendChild(overlay);
+}
+
+function attachLongPress(btn, onTap, onLong) {
+  let timer = null;
+  let didLong = false;
+  const start = () => {
+    didLong = false;
+    btn.classList.add("pressing");
+    timer = setTimeout(() => {
+      didLong = true;
+      btn.classList.remove("pressing");
+      if (navigator.vibrate) navigator.vibrate(30);
+      onLong();
+    }, 500);
+  };
+  const cancel = () => {
+    clearTimeout(timer);
+    btn.classList.remove("pressing");
+  };
+  const end = (e) => {
+    clearTimeout(timer);
+    btn.classList.remove("pressing");
+    if (!didLong) onTap();
+    e.preventDefault();
+  };
+  btn.addEventListener("pointerdown", start);
+  btn.addEventListener("pointerup", end);
+  btn.addEventListener("pointerleave", cancel);
+  btn.addEventListener("pointercancel", cancel);
+}
+
+function buildPlayerTile(p) {
+  const btn = el("button", { class: "tile-plus" }, "+1");
+  const goalsEl = el("div", { class: "tile-goals" }, p.goals > 0 ? String(p.goals) : "");
+
+  attachLongPress(btn,
+    async () => {
+      try {
+        await scoreGoal({ id: createId(), matchId: currentMatchId, scorerId: p.id, createdAt: new Date().toISOString() });
+        kickSync();
+        renderLive();
+      } catch (e) { alert(e.message || e); }
+    },
+    async () => {
+      if (p.goals <= 0) return;
+      try {
+        const removed = await undoLastGoalOf(currentMatchId, p.id);
+        if (!removed) return;
+        kickSync();
+        renderLive();
+      } catch (e) { alert(e.message || e); }
+    }
+  );
+
+  return el("div", { class: "tile " + p.team }, [
+    el("div", { class: "tile-name" }, p.name),
+    goalsEl,
+    btn,
+  ]);
 }
 
 async function renderLive() {
@@ -248,14 +341,14 @@ async function renderLive() {
   const { match, teamA, teamB } = data;
   if (match.status === "FINISHED") return goDone(currentMatchId);
 
-  root.innerHTML = "";
+  root.textContent = "";
   root.appendChild(
     el("header", { class: "scorebar" }, [
       el("div", { class: "col" }, [
         el("div", { class: "tn-a" }, match.teamAName),
         el("div", { class: "score" }, String(match.scoreA)),
       ]),
-      el("div", { class: "sep" }, "—"),
+      el("div", { class: "sep" }, "\u2014"),
       el("div", { class: "col" }, [
         el("div", { class: "tn-b" }, match.teamBName),
         el("div", { class: "score" }, String(match.scoreB)),
@@ -263,58 +356,25 @@ async function renderLive() {
     ])
   );
 
-  const grid = el("div", { class: "live-grid" });
-  [...teamA, ...teamB]
-    .sort((a, b) => a.team.localeCompare(b.team) || a.name.localeCompare(b.name))
-    .forEach((p) => {
-      grid.appendChild(
-        el("div", { class: "tile " + p.team }, [
-          el("div", { class: "tile-name" }, [
-            p.name,
-            el("span", { class: "tag " + p.team }, p.team === "A" ? match.teamAName : match.teamBName),
-          ]),
-          el("div", { class: "tile-goals" }, String(p.goals)),
-          el("div", { class: "row gap" }, [
-            el("button", {
-              class: "btn primary tile-plus",
-              onclick: async () => {
-                try {
-                  await scoreGoal({
-                    id: createId(),
-                    matchId: currentMatchId,
-                    scorerId: p.id,
-                    createdAt: new Date().toISOString(),
-                  });
-                  kickSync();
-                  renderLive();
-                } catch (e) { alert(e.message || e); }
-              },
-            }, "+1"),
-            el("button", {
-              class: "btn ghost tile-minus",
-              onclick: async () => {
-                try {
-                  const removed = await undoLastGoalOf(currentMatchId, p.id);
-                  if (!removed) return;
-                  kickSync();
-                  renderLive();
-                } catch (e) { alert(e.message || e); }
-              },
-            }, "−"),
-          ]),
-        ])
-      );
-    });
-  root.appendChild(el("div", { class: "wrap" }, grid));
+  const sortedA = [...teamA].sort((a, b) => a.name.localeCompare(b.name));
+  const sortedB = [...teamB].sort((a, b) => a.name.localeCompare(b.name));
+  const isLandscape = window.innerWidth > window.innerHeight;
 
-  root.appendChild(
-    el("footer", { class: "actionbar" }, [
-      el("button", {
-        class: "btn red big",
-        onclick: () => goMvp(currentMatchId),
-      }, "Terminer le match"),
-    ])
-  );
+  if (isLandscape) {
+    const colA = el("div", { class: "team-col" }, [
+      el("div", { class: "team-header A" }, match.teamAName),
+      ...sortedA.map((p) => buildPlayerTile(p)),
+    ]);
+    const colB = el("div", { class: "team-col" }, [
+      el("div", { class: "team-header B" }, match.teamBName),
+      ...sortedB.map((p) => buildPlayerTile(p)),
+    ]);
+    root.appendChild(el("div", { class: "live-teams" }, [colA, colB]));
+  } else {
+    const grid = el("div", { class: "live-grid" });
+    [...sortedA, ...sortedB].forEach((p) => grid.appendChild(buildPlayerTile(p)));
+    root.appendChild(el("div", { class: "wrap" }, grid));
+  }
 }
 
 // ---------------- MVP ----------------
