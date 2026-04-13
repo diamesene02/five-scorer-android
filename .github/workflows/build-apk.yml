@@ -96,9 +96,10 @@ jobs:
           PIN: **1234** | Sync to Supabase enabled.
           NOTES
           if gh release view "$TAG" --repo "$REPO" >/dev/null 2>&1; then
-            gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag
+            gh release delete "$TAG" --repo "$REPO" --yes
+            git push origin ":refs/tags/$TAG" 2>/dev/null || true
           fi
-          gh release create "$TAG" five-scorer.apk --repo "$REPO" --title "Five Scorer APK (latest)" --notes-file notes.md
+          gh release create "$TAG" five-scorer.apk --repo "$REPO" --title "Five Scorer APK (latest)" --notes-file notes.md --latest
 
       - name: Post failure details as issue
         if: failure()
