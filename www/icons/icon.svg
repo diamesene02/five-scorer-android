@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#14532d"/>
+      <stop offset="100%" stop-color="#052e16"/>
+    </linearGradient>
+    <radialGradient id="ball" cx="0.3" cy="0.3" r="0.8">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="70%" stop-color="#d4d4d8"/>
+      <stop offset="100%" stop-color="#71717a"/>
+    </radialGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <!-- pitch line -->
+  <circle cx="256" cy="256" r="120" fill="none" stroke="#ffffff20" stroke-width="4"/>
+  <line x1="0" y1="256" x2="512" y2="256" stroke="#ffffff20" stroke-width="4"/>
+  <!-- FS monogram -->
+  <text x="50%" y="50%" dominant-baseline="central" text-anchor="middle"
+    font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif"
+    font-weight="900" font-size="210" fill="#ffffff" letter-spacing="-8">FS</text>
+  <!-- small ball in upper right inside safe zone -->
+  <circle cx="390" cy="140" r="34" fill="url(#ball)"/>
+  <path d="M 390 110 L 408 125 L 402 148 L 378 148 L 372 125 Z" fill="#111827" opacity="0.75"/>
+</svg>

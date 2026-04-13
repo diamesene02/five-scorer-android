@@ -1,0 +1,24 @@
+{
+  "name": "five-scorer-mobile",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Five Scorer — Android APK (Capacitor)",
+  "scripts": {
+    "bundle": "esbuild www/src/entry.js --bundle --outfile=www/app.bundle.js --format=iife --platform=browser --minify",
+    "cap:add": "npx cap add android",
+    "cap:sync": "npx cap sync android",
+    "android:customize": "node scripts/customize-android.mjs",
+    "build:apk": "npm run bundle && (test -d android || npm run cap:add) && npm run cap:sync && npm run android:customize && cd android && ./gradlew assembleDebug"
+  },
+  "dependencies": {
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@paralleldrive/cuid2": "^2.2.2",
+    "@supabase/supabase-js": "^2.45.0",
+    "dexie": "^4.0.10"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^7.0.0",
+    "esbuild": "^0.24.0"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "appId": "dev.diame.fivescorer",
+  "appName": "Five Scorer",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "captureInput": true
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
