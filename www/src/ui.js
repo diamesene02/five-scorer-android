@@ -140,20 +140,16 @@ async function renderHome() {
   const root = $("#screen-home");
   root.textContent = "";
 
-  // Load all matches, enrich
   const matches = await listMatches(30);
   const finished = matches.filter((m) => m.status === "FINISHED");
   const live = matches.find((m) => m.status === "LIVE") || null;
   const hero = finished[0];
   const rest = finished.slice(1, 6);
 
-  // Aggregate season stats
+  // Season stats
   let totalGoals = 0;
   const scorerStats = {};
-  for (const m of finished) {
-    totalGoals += (m.scoreA || 0) + (m.scoreB || 0);
-  }
-  // Compute top scorers from local goal data
+  for (const m of finished) totalGoals += (m.scoreA || 0) + (m.scoreB || 0);
   const allGoals = await db.goals.toArray();
   const matchIdSet = new Set(finished.map((m) => m.id));
   for (const g of allGoals) {
@@ -181,203 +177,261 @@ async function renderHome() {
     .sort((a, b) => b.ga - a.ga || b.goals - a.goals)
     .slice(0, 5);
 
-  const now = new Date();
-  const weekday = now.toLocaleDateString("fr-FR", { weekday: "long" }).toUpperCase();
-  const dateShort = now.toLocaleDateString("fr-FR", {
-    day: "2-digit",
-    month: "short",
-  }).toUpperCase();
-  const seq = String(finished.length + 1).padStart(3, "0");
+  const lastMatchData = hero ? await getMatch(hero.id) : null;
+  const mvpPlayer = hero?.mvpId
+    ? [...(lastMatchData?.teamA || []), ...(lastMatchData?.teamB || [])].find((p) => p.id === hero.mvpId)
+    : null;
 
-  // ---- Masthead ----
-  root.appendChild(
-    el("section", { class: "home-hero" }, [
-      el("div", { class: "row", style: "margin-bottom: 4px; gap: 8px" }, [
-        el("span", { class: "label-tech" }, "\u2691"),
-        el("span", { class: "seq" }, "N\u00B0" + seq),
-        el("span", { class: "label-tech" }, "\u00B7"),
-        el("span", { class: "seq" }, weekday),
-        el("span", { class: "label-tech", style: "margin-left: auto" }, dateShort),
-      ]),
-      el("div", { style: "line-height:1; margin-top: 4px" }, [
-        el("span", { class: "display-xl", style: "display: inline" }, "Five"),
-        el("span", {
-          style: "margin-left: 10px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--ink-1); vertical-align: middle",
-        }, "Scorer"),
-      ]),
-      el("p", {
-        style: "margin: 10px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2); line-height: 1.5",
-      }, "Console de notation \u00B7 Match op\u00E9rations"),
+  // ============== HERO with aurora ==============
+  const heroSection = el("section", {
+    class: "aurora",
+    style: "position: relative; padding: 24px 16px; border-bottom: 1px solid var(--stroke); overflow: hidden;",
+  });
+
+  heroSection.appendChild(
+    el("span", { class: "kicker" }, "La maison du Five du jeudi")
+  );
+  heroSection.appendChild(
+    el("h1", { class: "display-xl", style: "margin: 14px 0 10px" }, [
+      el("span", {}, "Marque vite."),
+      el("br"),
+      el("span", { style: "color: var(--lime)" }, "Regarde mieux."),
     ])
   );
+  heroSection.appendChild(
+    el("p", {
+      style: "margin: 0 0 18px; color: var(--ink-1); font-size: 14px; max-width: 320px; line-height: 1.4",
+    }, "Score live, stats qui tiennent, partage qui claque.")
+  );
 
-  // ---- Live strap ----
   if (live) {
-    const lastScore = `${live.scoreA} : ${live.scoreB}`;
-    const strap = el("div", {
-      class: "home-live-strap",
-      onclick: () => { currentMatchId = live.id; goLive(live.id); },
-    }, [
-      el("span", { class: "live-marker" }, "En cours"),
-      el("span", {
-        class: "num",
-        style: "font-size: 22px; font-weight: 500",
-      }, lastScore),
-      el("span", {
-        style: "font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--amber)",
-      }, "Reprendre \u2192"),
-    ]);
-    root.appendChild(strap);
+    heroSection.appendChild(
+      el("button", {
+        class: "btn",
+        style: "display: flex; align-items: center; gap: 10px; width: 100%; padding: 14px 16px; background: rgba(34,197,94,0.14); border: 1px solid rgba(34,197,94,0.5); color: var(--a-400); margin-bottom: 10px; text-align: left; justify-content: space-between",
+        onclick: () => { currentMatchId = live.id; goLive(live.id); },
+      }, [
+        el("span", { style: "display: flex; align-items: center; gap: 8px" }, [
+          el("span", {
+            style: "width: 8px; height: 8px; border-radius: 999px; background: var(--live); box-shadow: 0 0 10px var(--live-pulse); display: inline-block",
+          }),
+          el("span", { style: "font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase" },
+            "En cours · reprendre"),
+        ]),
+        el("span", { class: "num-sculpt", style: "font-size: 22px" },
+          `${live.scoreA} : ${live.scoreB}`),
+      ])
+    );
   }
 
-  // ---- Season stats row ----
-  root.appendChild(
-    el("div", { class: "home-stats-row" }, [
-      el("div", { class: "home-stat" }, [
-        el("div", { class: "val" }, String(finished.length)),
-        el("div", { class: "lbl" }, "Matchs"),
-      ]),
-      el("div", { class: "home-stat" }, [
-        el("div", { class: "val accent" }, String(totalGoals)),
-        el("div", { class: "lbl" }, "Buts"),
-      ]),
-      el("div", { class: "home-stat" }, [
-        el("div", { class: "val" }, finished.length ? (totalGoals / finished.length).toFixed(1) : "—"),
-        el("div", { class: "lbl" }, "Moy."),
-      ]),
+  heroSection.appendChild(
+    el("button", {
+      class: "btn primary big",
+      style: "width: 100%",
+      onclick: goSetup,
+    }, [
+      el("span", { style: "letter-spacing: -0.01em" }, "Lancer un match"),
+      el("span", { style: "margin-left: 6px" }, "→"),
     ])
   );
 
-  // ---- Last match poster ----
+  root.appendChild(heroSection);
+
+  // ============== STATS ROW ==============
+  root.appendChild(
+    el("div", {
+      style: "display: grid; grid-template-columns: 1fr 1fr 1fr; border-bottom: 1px solid var(--stroke); background: var(--bg-1)",
+    }, [
+      makeStatCell("Matchs", String(finished.length), false),
+      makeStatCell("Buts", String(totalGoals), true),
+      makeStatCell("Moy.", finished.length ? (totalGoals / finished.length).toFixed(1) : "—", false),
+    ])
+  );
+
+  // ============== LAST MATCH POSTER ==============
   if (hero) {
     const winA = hero.scoreA > hero.scoreB;
     const winB = hero.scoreB > hero.scoreA;
-    const draw = hero.scoreA === hero.scoreB;
-    const lastMatchData = await getMatch(hero.id);
-    const mvpPlayer = hero.mvpId
-      ? [...(lastMatchData?.teamA || []), ...(lastMatchData?.teamB || [])].find((p) => p.id === hero.mvpId)
-      : null;
 
-    const section = el("section", { class: "home-section" });
+    const section = el("section", { style: "padding: 18px 16px; border-bottom: 1px solid var(--stroke)" });
     section.appendChild(
-      el("div", { class: "home-section-title" }, [
-        el("span", { class: "label-tech" }, "— Dernier match"),
-        el("span", { class: "seq" },
-          new Date(hero.playedAt).toLocaleDateString("fr-FR", {
-            weekday: "short", day: "2-digit", month: "short",
-          }).toUpperCase()),
+      el("div", { style: "display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 12px" }, [
+        el("span", { class: "kicker" }, "Dernier match"),
+        el("span", {
+          style: "font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); letter-spacing: 0.14em; text-transform: uppercase",
+        }, new Date(hero.playedAt).toLocaleDateString("fr-FR", {
+          weekday: "short", day: "2-digit", month: "short",
+        })),
       ])
     );
-    const posterWrap = el("div", { onclick: () => goDone(hero.id), style: "cursor: pointer" });
-    posterWrap.appendChild(
-      el("div", { class: "home-last-match" }, [
+
+    const poster = el("div", {
+      onclick: () => goDone(hero.id),
+      style: "cursor: pointer; border: 1px solid var(--stroke); background: linear-gradient(135deg, var(--bg-1), var(--bg-0)); border-radius: 16px; padding: 18px",
+    });
+    poster.appendChild(
+      el("div", { style: "display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px" }, [
         el("div", { style: "text-align: right" }, [
-          el("div", { class: "team-label A" }, hero.teamAName.toUpperCase()),
           el("div", {
-            class: "score-big " + (winA ? "win" : draw ? "neutral" : "lose"),
+            style: "font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--a-400); margin-bottom: 4px",
+          }, hero.teamAName),
+          el("span", {
+            class: "num-sculpt",
+            style: "font-size: 64px; line-height: 1",
+            "data-win": winA ? "true" : "false",
           }, String(hero.scoreA)),
         ]),
-        el("div", { class: "vs" }, "vs"),
+        el("div", {
+          style: "display: flex; flex-direction: column; align-items: center; gap: 6px",
+        }, [
+          el("div", { style: "height: 32px; width: 1px; background: var(--stroke-hi)" }),
+          el("span", {
+            style: "font-size: 10px; font-weight: 800; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink-2)",
+          }, "VS"),
+          el("div", { style: "height: 32px; width: 1px; background: var(--stroke-hi)" }),
+        ]),
         el("div", { style: "text-align: left" }, [
-          el("div", { class: "team-label B" }, hero.teamBName.toUpperCase()),
           el("div", {
-            class: "score-big " + (winB ? "win" : draw ? "neutral" : "lose"),
+            style: "font-size: 10px; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--b-400); margin-bottom: 4px",
+          }, hero.teamBName),
+          el("span", {
+            class: "num-sculpt",
+            style: "font-size: 64px; line-height: 1",
+            "data-win": winB ? "true" : "false",
           }, String(hero.scoreB)),
         ]),
       ])
     );
+
     if (mvpPlayer) {
-      posterWrap.appendChild(
-        el("div", { class: "home-mvp-line" }, [
-          el("div", { class: "lbl" }, "MVP"),
-          el("div", { class: "name" }, mvpPlayer.name),
+      poster.appendChild(
+        el("div", {
+          style: "margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--stroke); display: flex; align-items: center; gap: 8px",
+        }, [
+          el("span", {
+            style: "background: rgba(245,179,1,0.2); color: var(--gold); font-size: 9px; font-weight: 800; letter-spacing: 0.22em; text-transform: uppercase; padding: 3px 8px; border-radius: 999px",
+          }, "⭐ MVP"),
+          el("span", { style: "font-size: 14px; font-weight: 700" }, mvpPlayer.name),
         ])
       );
     }
-    section.appendChild(posterWrap);
+    section.appendChild(poster);
     root.appendChild(section);
   }
 
-  // ---- Top scorers ----
+  // ============== TOP SCORERS ==============
   if (topScorers.length > 0) {
-    const section = el("section", { class: "home-section home-top-scorers" });
+    const section = el("section", { style: "padding: 18px 16px; border-bottom: 1px solid var(--stroke)" });
     section.appendChild(
-      el("div", { class: "home-section-title" }, [
-        el("span", { class: "label-tech" }, "— Top buteurs"),
-        el("button", {
-          class: "more",
-          onclick: () => alert("Classement complet : voir sur le site web"),
-        }, "Complet \u2192"),
+      el("div", { style: "display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px" }, [
+        el("span", { class: "kicker" }, "Top buteurs"),
+        el("span", {
+          style: "font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2)",
+        }, "G+A"),
       ])
     );
-    topScorers.forEach((p, i) => {
-      section.appendChild(
-        el("div", { class: "leader" }, [
-          el("span", {
-            style: "font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); min-width: 18px",
-          }, String(i + 1).padStart(2, "0")),
-          el("span", {
-            style: "font-family: var(--font-mono); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em",
-          }, p.name),
-          el("span", { class: "leader-dots" }),
-          el("span", {
-            style: "font-family: var(--font-mono); font-size: 11px; color: var(--ink-2)",
-          }, `${p.goals}B·${p.assists}P`),
-          el("span", {
-            style: "font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--amber); min-width: 24px; text-align: right",
-          }, String(p.ga)),
-        ])
-      );
+
+    const list = el("div", {
+      style: "border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; background: var(--bg-1)",
     });
+    topScorers.forEach((p, i) => {
+      const row = el("div", {
+        style: "display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 10px; padding: 11px 14px;" +
+               (i < topScorers.length - 1 ? " border-bottom: 1px solid var(--stroke)" : ""),
+      }, [
+        el("span", {
+          style: "font-size: 14px; color: var(--ink-2)",
+        }, i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : "#" + (i + 1)),
+        el("span", {
+          style: "font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap",
+        }, p.name),
+        el("span", {
+          style: "font-family: var(--font-mono); font-size: 11px; color: var(--ink-2)",
+        }, `${p.goals}B·${p.assists}P`),
+        el("span", {
+          style: "font-family: var(--font-mono); font-size: 16px; font-weight: 800; color: var(--lime); min-width: 24px; text-align: right",
+        }, String(p.ga)),
+      ]);
+      list.appendChild(row);
+    });
+    section.appendChild(list);
     root.appendChild(section);
   }
 
-  // ---- Recent matches ----
+  // ============== ARCHIVE ==============
   if (rest.length > 0) {
-    const section = el("section", { class: "home-section" });
+    const section = el("section", { style: "padding: 18px 16px; border-bottom: 1px solid var(--stroke)" });
     section.appendChild(
-      el("div", { class: "home-section-title" }, [
-        el("span", { class: "label-tech" }, "— Archives"),
-        el("button", { class: "more", onclick: goHistory }, "Tout \u2192"),
+      el("div", { style: "display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px" }, [
+        el("span", { class: "kicker" }, "Archives"),
+        el("button", {
+          onclick: goHistory,
+          style: "background: transparent; border: 0; font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--lime); cursor: pointer; padding: 0",
+        }, "Tout voir →"),
       ])
     );
+
+    const list = el("ul", {
+      style: "list-style: none; padding: 0; margin: 0; border: 1px solid var(--stroke); border-radius: 12px; overflow: hidden; background: var(--bg-1)",
+    });
     rest.forEach((m, i) => {
       const winA = m.scoreA > m.scoreB;
       const winB = m.scoreB > m.scoreA;
-      section.appendChild(
-        el("div", {
-          class: "home-recent-row",
+      const li = el("li", {}, [
+        el("button", {
           onclick: () => goDone(m.id),
+          style: "width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 14px; background: transparent; border: 0; text-align: left; cursor: pointer; color: var(--ink-0);" +
+                 (i < rest.length - 1 ? " border-bottom: 1px solid var(--stroke)" : ""),
         }, [
-          el("span", { class: "seq-col" }, String(i + 2).padStart(3, "0")),
-          el("span", { class: "date-col" },
-            new Date(m.playedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })),
-          el("span", { class: "teams-col" },
-            `${m.teamAName} \u00D7 ${m.teamBName}`),
-          el("span", { class: "score-col" }, [
-            el("span", { class: winA ? "win" : "lose" }, String(m.scoreA)),
-            el("span", { class: "sep" }, ":"),
-            el("span", { class: winB ? "win" : "lose" }, String(m.scoreB)),
+          el("span", {
+            style: "width: 52px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2)",
+          }, new Date(m.playedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })),
+          el("span", {
+            style: "flex: 1; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap",
+          }, [
+            m.teamAName,
+            el("span", { style: "color: var(--ink-2); font-weight: 400" }, " vs "),
+            m.teamBName,
           ]),
-        ])
-      );
+          el("span", {
+            class: "num-sculpt",
+            style: "font-size: 16px",
+          }, [
+            el("span", { style: "color:" + (winA ? "var(--lime)" : "var(--ink-1)") }, String(m.scoreA)),
+            el("span", { style: "color: var(--ink-2); padding: 0 5px" }, ":"),
+            el("span", { style: "color:" + (winB ? "var(--lime)" : "var(--ink-1)") }, String(m.scoreB)),
+          ]),
+        ]),
+      ]);
+      list.appendChild(li);
     });
+    section.appendChild(list);
     root.appendChild(section);
   }
 
-  // ---- Actions ----
+  // ============== Footer actions ==============
   root.appendChild(
-    el("div", { class: "home-actions" }, [
-      el("button", { class: "btn primary big", onclick: goSetup }, "\u2691  Nouveau match"),
-      el("button", { class: "btn ghost big", onclick: goHistory }, "Archives"),
+    el("div", {
+      style: "display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 16px",
+    }, [
+      el("button", { class: "btn primary big", onclick: goSetup }, "+ Nouveau match"),
+      el("button", { class: "btn ghost big", onclick: goHistory }, "Historique"),
     ])
   );
+}
 
-  // ---- Footer ----
-  root.appendChild(
-    el("footer", { class: "home-footer" },
-      "Five Scorer \u00B7 Console v2 \u00B7 Jeudi 21H")
-  );
+function makeStatCell(label, value, accent) {
+  return el("div", {
+    style: "padding: 14px 10px; text-align: center;",
+  }, [
+    el("div", {
+      class: "num-sculpt",
+      style: "font-size: 30px; line-height: 1;" + (accent ? " color: var(--lime); text-shadow: 0 0 40px var(--lime-glow)" : ""),
+    }, value),
+    el("div", {
+      style: "margin-top: 4px; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--ink-2); font-weight: 700",
+    }, label),
+  ]);
 }
 
 // ---------------- Setup ----------------
@@ -1131,13 +1185,8 @@ export async function boot() {
   if (!app.dataset.built) {
     app.innerHTML = `
       <header class="topbar">
-        <div class="brand brand-mono">
-          <span class="serif">Five</span>
-          <span class="tag-txt">Scorer</span>
-        </div>
-        <div class="topbar-end">
-          <button id="sync-badge" class="sync-badge ok">…</button>
-        </div>
+        <div class="brand">⚽ Five Scorer</div>
+        <button id="sync-badge" class="sync-badge ok">…</button>
       </header>
       <main>
         <section id="screen-pin" class="screen"></section>
