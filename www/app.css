@@ -47,6 +47,8 @@
   --gold-glow: rgba(245,179,1,0.55);
   --live: #EF4444;
   --live-pulse: rgba(239,68,68,0.35);
+  --lime: #D4FF3A;
+  --lime-glow: rgba(212,255,58,0.45);
 
   /* Spacing */
   --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-6: 24px; --sp-8: 32px;
@@ -229,9 +231,11 @@ input:focus { border-color: var(--a-500); }
 .btn:active { transform: scale(0.97); }
 .btn.big { padding: 16px 20px; font-size: 17px; }
 .btn.primary {
-  background: linear-gradient(135deg, var(--a-500), var(--a-400));
-  color: white;
-  box-shadow: 0 4px 20px -4px var(--a-glow);
+  background: var(--lime);
+  color: #0a1400;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  box-shadow: 0 8px 28px -10px var(--lime-glow), inset 0 1px 0 rgba(255,255,255,0.4);
 }
 .btn.ghost {
   background: var(--bg-2);
@@ -350,8 +354,12 @@ input:focus { border-color: var(--a-500); }
   min-width: 1ch;
   text-align: center;
 }
-.scoreboard .score.leading.A { color: var(--a-400); text-shadow: 0 0 28px var(--a-glow); }
-.scoreboard .score.leading.B { color: var(--b-400); text-shadow: 0 0 28px var(--b-glow); }
+.scoreboard .score { letter-spacing: -0.06em; }
+.scoreboard .score.leading.A,
+.scoreboard .score.leading.B {
+  color: var(--lime);
+  text-shadow: 0 0 32px var(--lime-glow), 0 2px 0 rgba(0,0,0,0.4);
+}
 .scoreboard .sep { color: var(--ink-2); font-size: 44px; font-weight: 500; }
 
 /* Goal celebration: score pop + radial burst */
@@ -804,7 +812,8 @@ input:focus { border-color: var(--a-500); }
   letter-spacing: -0.04em;
   color: var(--ink-1);
 }
-.score-num.win { color: var(--gold); text-shadow: 0 0 32px var(--gold-glow); }
+.score-num { letter-spacing: -0.06em; }
+.score-num.win { color: var(--lime); text-shadow: 0 0 32px var(--lime-glow), 0 3px 0 rgba(0,0,0,0.4); }
 .score-num.lose { color: var(--ink-2); }
 .score-sep { color: var(--ink-2); font-size: 48px; font-weight: 500; }
 
