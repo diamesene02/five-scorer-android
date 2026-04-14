@@ -10,6 +10,7 @@ import {
   addLocalGuest,
   createMatch,
   scoreGoal,
+  setAssist,
   undoLastGoalOf,
   finishMatch,
   getMatch,
@@ -23,7 +24,8 @@ import {
   kickSync,
   subscribeSync,
 } from "./sync.js";
-import { unlockAudio, playGoalSound, playUndoSound } from "./audio.js";
+import { unlockAudio, playGoalSound, playUndoSound, isSoundEnabled, toggleSound } from "./audio.js";
+import { renderShareCard } from "./shareCard.js";
 
 // ---------------- helpers ----------------
 
@@ -254,29 +256,41 @@ async function goLive(matchId) {
 
 let matchStartTs = null;
 let clockInterval = null;
+let clockPausedAt = null; // timestamp when paused (null = not paused)
+let clockPausedMs = 0; // accumulated paused ms
 
 function updateTopbarForLive(isLive) {
   const topbar = $(".topbar");
-  const existingBtn = document.getElementById("btn-fin");
-  if (existingBtn) existingBtn.remove();
+  ["btn-fin", "btn-sound", "btn-pause"].forEach((id) => {
+    const n = document.getElementById(id);
+    if (n) n.remove();
+  });
   const existingLive = topbar.querySelector(".topbar-left");
   if (existingLive) existingLive.remove();
 
   if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
 
   if (isLive) {
-    // Left: LIVE dot + clock
+    // Left: LIVE dot + clock + pause btn
     const clockEl = el("span", { class: "match-clock", id: "match-clock" }, "00:00");
+    const pauseBtn = el("button", { class: "icon-btn", id: "btn-pause", title: "Pause", onclick: togglePause }, [
+      el("span", { id: "pause-icon" }, "\u23F8")
+    ]);
+    const liveDot = el("span", { class: "live-dot", id: "live-dot" });
     const left = el("div", { class: "topbar-left" }, [
-      el("span", { class: "live-dot" }),
-      el("span", {}, "LIVE"),
+      liveDot,
+      el("span", { id: "live-label" }, "LIVE"),
       clockEl,
+      pauseBtn,
     ]);
     topbar.insertBefore(left, topbar.firstChild);
 
     matchStartTs = Date.now();
+    clockPausedAt = null;
+    clockPausedMs = 0;
     const tick = () => {
-      const s = Math.floor((Date.now() - matchStartTs) / 1000);
+      if (clockPausedAt) return;
+      const s = Math.floor((Date.now() - matchStartTs - clockPausedMs) / 1000);
       const mm = String(Math.floor(s / 60)).padStart(2, "0");
       const ss = String(s % 60).padStart(2, "0");
       clockEl.textContent = `${mm}:${ss}`;
@@ -284,7 +298,7 @@ function updateTopbarForLive(isLive) {
     tick();
     clockInterval = setInterval(tick, 1000);
 
-    // Right: Fin + sync dot
+    // Right: Sound + Fin + sync dot
     let endDiv = topbar.querySelector(".topbar-end");
     if (!endDiv) {
       endDiv = el("div", { class: "topbar-end" });
@@ -293,14 +307,22 @@ function updateTopbarForLive(isLive) {
       topbar.appendChild(endDiv);
       if (badge) endDiv.appendChild(badge);
     }
+    const soundBtn = el("button", {
+      class: "icon-btn",
+      id: "btn-sound",
+      title: "Son",
+      onclick: () => {
+        const on = toggleSound();
+        soundBtn.textContent = on ? "\uD83D\uDD0A" : "\uD83D\uDD07";
+      },
+    }, isSoundEnabled() ? "\uD83D\uDD0A" : "\uD83D\uDD07");
     const btn = el("button", { class: "btn-fin", id: "btn-fin", onclick: confirmEnd }, "Fin");
     endDiv.insertBefore(btn, endDiv.firstChild);
+    endDiv.insertBefore(soundBtn, btn);
 
-    // Hide brand on live
     const brand = topbar.querySelector(".brand");
     if (brand) brand.style.display = "none";
   } else {
-    // Restore brand + sync badge style
     const brand = topbar.querySelector(".brand");
     if (brand) brand.style.display = "";
     const badge = $("#sync-badge");
@@ -309,6 +331,72 @@ function updateTopbarForLive(isLive) {
       if (!badge.textContent || badge.textContent === "") badge.textContent = "\u2026";
     }
   }
+}
+
+function togglePause() {
+  const pauseIcon = document.getElementById("pause-icon");
+  const liveDot = document.getElementById("live-dot");
+  const liveLabel = document.getElementById("live-label");
+  if (clockPausedAt) {
+    // Resume
+    clockPausedMs += Date.now() - clockPausedAt;
+    clockPausedAt = null;
+    if (pauseIcon) pauseIcon.textContent = "\u23F8";
+    if (liveDot) liveDot.style.animation = "";
+    if (liveLabel) liveLabel.textContent = "LIVE";
+  } else {
+    // Pause
+    clockPausedAt = Date.now();
+    if (pauseIcon) pauseIcon.textContent = "\u25B6";
+    if (liveDot) liveDot.style.animation = "none";
+    if (liveLabel) liveLabel.textContent = "PAUSE";
+  }
+}
+
+async function showAssistPicker(goalId, scorer) {
+  const data = await getMatch(currentMatchId);
+  if (!data) return;
+  const teammates = (scorer.team === "A" ? data.teamA : data.teamB).filter((p) => p.id !== scorer.id);
+  if (teammates.length === 0) return;
+
+  const overlay = el("div", { class: "assist-overlay", id: "assist-picker" });
+  const box = el("div", { class: "assist-box" });
+  box.appendChild(
+    el("div", { class: "assist-title" }, [
+      el("span", { class: "tag " + scorer.team }, "BUT"),
+      el("span", {}, " " + scorer.name + " — passeur ?"),
+    ])
+  );
+
+  const chips = el("div", { class: "assist-chips" });
+  teammates.forEach((p) => {
+    chips.appendChild(
+      el("button", {
+        class: "assist-chip " + scorer.team,
+        onclick: async () => {
+          try {
+            await setAssist(goalId, p.id);
+            kickSync();
+          } catch (_) {}
+          overlay.remove();
+        },
+      }, p.name)
+    );
+  });
+  box.appendChild(chips);
+
+  const skipBtn = el("button", {
+    class: "btn ghost assist-skip",
+    onclick: () => overlay.remove(),
+  }, "Aucune passe");
+  box.appendChild(skipBtn);
+
+  overlay.appendChild(box);
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  document.body.appendChild(overlay);
+
+  // Auto-dismiss after 5s
+  setTimeout(() => { if (document.getElementById("assist-picker") === overlay) overlay.remove(); }, 5000);
 }
 
 function confirmEnd() {
@@ -389,9 +477,12 @@ function buildPlayerTile(p) {
         if (navigator.vibrate) navigator.vibrate(12);
         playGoalSound();
         pendingGoalAnim = { team: p.team };
-        await scoreGoal({ id: createId(), matchId: currentMatchId, scorerId: p.id, createdAt: new Date().toISOString() });
+        const goalId = createId();
+        await scoreGoal({ id: goalId, matchId: currentMatchId, scorerId: p.id, createdAt: new Date().toISOString() });
         kickSync();
         renderLive();
+        // Show assist picker (non-blocking, auto-dismisses)
+        showAssistPicker(goalId, p);
       } catch (e) { alert(e.message || e); }
     },
     async () => {
@@ -522,46 +613,128 @@ async function confirmFinish(mvpId) {
 
 async function goDone(matchId) {
   currentMatchId = matchId;
+  updateTopbarForLive(false);
   show("done");
   const data = await getMatch(matchId);
   const root = $("#screen-done");
-  root.innerHTML = "";
+  root.textContent = "";
   if (!data) { root.appendChild(el("p", {}, "Match introuvable")); return; }
   const { match, teamA, teamB, goals } = data;
   const all = [...teamA, ...teamB];
   const goalCount = {};
-  goals.forEach((g) => { goalCount[g.scorerId] = (goalCount[g.scorerId] || 0) + 1; });
+  const assistCount = {};
+  goals.forEach((g) => {
+    goalCount[g.scorerId] = (goalCount[g.scorerId] || 0) + 1;
+    if (g.assistId) assistCount[g.assistId] = (assistCount[g.assistId] || 0) + 1;
+  });
   const scorers = all
     .filter((p) => goalCount[p.id])
     .sort((a, b) => goalCount[b.id] - goalCount[a.id]);
+  const assisters = all
+    .filter((p) => assistCount[p.id])
+    .sort((a, b) => assistCount[b.id] - assistCount[a.id]);
   const mvp = match.mvpId ? all.find((p) => p.id === match.mvpId) : null;
 
+  const winA = match.scoreA > match.scoreB;
+  const winB = match.scoreB > match.scoreA;
+
+  // Hero score
+  const heroScore = el("div", { class: "recap-hero" }, [
+    el("div", { class: "recap-teams" }, [
+      el("div", { class: "recap-team-name A" }, match.teamAName.toUpperCase()),
+      el("div", { class: "recap-team-name B" }, match.teamBName.toUpperCase()),
+    ]),
+    el("div", { class: "recap-score" }, [
+      el("span", { class: "score-num" + (winA ? " win" : winB ? " lose" : "") }, String(match.scoreA)),
+      el("span", { class: "score-sep" }, ":"),
+      el("span", { class: "score-num" + (winB ? " win" : winA ? " lose" : "") }, String(match.scoreB)),
+    ]),
+  ]);
+
+  // Timeline
+  const timeline = goals.length
+    ? el("div", { class: "timeline" },
+        goals.map((g) => el("div", { class: "timeline-row " + g.team }, [
+          el("span", { class: "timeline-minute" }, (g.minute != null ? g.minute + "'" : "—")),
+          el("span", { class: "timeline-ball" }, "\u26BD"),
+          el("span", { class: "timeline-scorer" }, g.scorerName || "?"),
+          g.assistName
+            ? el("span", { class: "timeline-assist" }, "(p. " + g.assistName + ")")
+            : null,
+        ]))
+      )
+    : el("div", { class: "muted pad" }, "Aucun but.");
+
   root.appendChild(
-    el("div", { class: "wrap" }, [
-      el("h1", {}, "Match terminé"),
-      el("div", { class: "final-pill" },
-        `${match.teamAName}  ${match.scoreA}  —  ${match.scoreB}  ${match.teamBName}`),
-      mvp ? el("div", { class: "mvp-line" }, [
-        el("span", { class: "tag mvp" }, "MVP"), " " + mvp.name,
+    el("div", { class: "wrap recap-wrap" }, [
+      el("div", { class: "recap-header" }, "MATCH TERMINÉ"),
+      heroScore,
+      mvp ? el("div", { class: "mvp-pill" }, [
+        el("span", {}, "\u2B50 MVP — "),
+        el("strong", {}, mvp.name),
       ]) : null,
-      el("div", { class: "section-title" }, "Buteurs"),
-      el("div", { class: "event-list" },
-        scorers.length
-          ? scorers.map((p) => el("div", { class: "ev" }, [
-              el("span", {}, [
-                el("span", { class: "tag " + p.team }, p.team === "A" ? match.teamAName : match.teamBName),
-                " " + p.name,
-              ]),
-              el("strong", {}, String(goalCount[p.id])),
-            ]))
-          : el("div", { class: "muted pad" }, "Aucun but.")
-      ),
+
+      el("div", { class: "section-title" }, "Chronologie"),
+      timeline,
+
+      scorers.length ? el("div", { class: "section-title" }, "Buteurs") : null,
+      scorers.length ? el("div", { class: "event-list" },
+        scorers.map((p, i) => el("div", { class: "ev" }, [
+          el("span", {}, [
+            el("span", { class: "podium-medal" }, i === 0 ? "\uD83E\uDD47" : i === 1 ? "\uD83E\uDD48" : i === 2 ? "\uD83E\uDD49" : "·"),
+            " ",
+            el("span", { class: "tag " + p.team }, p.team === "A" ? match.teamAName : match.teamBName),
+            " " + p.name,
+          ]),
+          el("strong", { class: "goal-dots" }, "\u2022".repeat(Math.min(goalCount[p.id], 5)) + (goalCount[p.id] > 5 ? " +" + (goalCount[p.id] - 5) : "")),
+        ]))
+      ) : null,
+
+      assisters.length ? el("div", { class: "section-title" }, "Passes d\u00E9cisives") : null,
+      assisters.length ? el("div", { class: "event-list" },
+        assisters.map((p) => el("div", { class: "ev" }, [
+          el("span", {}, p.name),
+          el("strong", {}, String(assistCount[p.id])),
+        ]))
+      ) : null,
+
       el("div", { class: "row gap" }, [
-        el("button", { class: "btn ghost big", onclick: goSetup }, "Nouveau match"),
-        el("button", { class: "btn ghost big", onclick: goHistory }, "Historique"),
+        el("button", { class: "btn ghost big", onclick: () => shareRecap(data, mvp?.name) }, "\uD83D\uDCE4 Partager"),
+        el("button", { class: "btn primary big", onclick: () => rematch(data) }, "\uD83D\uDD04 Rematch"),
+      ]),
+      el("div", { class: "row gap" }, [
+        el("button", { class: "btn ghost", onclick: goSetup }, "Nouveau match"),
+        el("button", { class: "btn ghost", onclick: goHistory }, "Historique"),
       ]),
     ])
   );
+}
+
+async function shareRecap(data, mvpName) {
+  try {
+    const { shareMatchImage } = await import("./shareCard.js");
+    await shareMatchImage({ ...data, mvpName });
+  } catch (e) {
+    alert("Impossible de partager : " + (e.message || e));
+  }
+}
+
+async function rematch(data) {
+  // Clone teams + same player assignments, new match ID
+  const teamA = data.teamA.map((p) => p.id);
+  const teamB = data.teamB.map((p) => p.id);
+  const id = createId();
+  await createMatch({
+    id,
+    playedAt: new Date().toISOString(),
+    teamAName: data.match.teamAName,
+    teamBName: data.match.teamBName,
+    teamA,
+    teamB,
+  });
+  currentMatchId = id;
+  kickSync();
+  goLive(id);
 }
 
 // ---------------- History ----------------

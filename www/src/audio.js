@@ -6,6 +6,29 @@
 let ctx = null;
 let unlocked = false;
 
+const SOUND_KEY = "fs-sound-enabled";
+
+export function isSoundEnabled() {
+  try {
+    const v = localStorage.getItem(SOUND_KEY);
+    return v === null ? true : v === "1";
+  } catch (_) {
+    return true;
+  }
+}
+
+export function setSoundEnabled(on) {
+  try {
+    localStorage.setItem(SOUND_KEY, on ? "1" : "0");
+  } catch (_) {}
+}
+
+export function toggleSound() {
+  const next = !isSoundEnabled();
+  setSoundEnabled(next);
+  return next;
+}
+
 function getCtx() {
   if (!ctx) {
     const AC = window.AudioContext || window.webkitAudioContext;
@@ -52,11 +75,13 @@ function playTone({ freq, duration, type = "sine", gain = 0.22, glideTo = null, 
 
 // Goal: quick rising chirp + higher confirmation tone
 export function playGoalSound() {
+  if (!isSoundEnabled()) return;
   playTone({ freq: 440, glideTo: 880, duration: 0.14, type: "triangle", gain: 0.28 });
   playTone({ freq: 1320, duration: 0.12, type: "sine", gain: 0.18, delay: 0.09 });
 }
 
 // Undo: descending tone, softer, signals "back"
 export function playUndoSound() {
+  if (!isSoundEnabled()) return;
   playTone({ freq: 520, glideTo: 260, duration: 0.16, type: "sawtooth", gain: 0.18 });
 }

@@ -91,7 +91,7 @@ export async function createMatch({
   );
 }
 
-export async function scoreGoal({ id, matchId, scorerId, createdAt }) {
+export async function scoreGoal({ id, matchId, scorerId, createdAt, assistId = null }) {
   await db.transaction(
     "rw",
     db.matches,
@@ -105,12 +105,18 @@ export async function scoreGoal({ id, matchId, scorerId, createdAt }) {
       if (!m) throw new Error("Match introuvable");
       if (m.status === "FINISHED") throw new Error("Match terminé");
 
+      // Compute match minute (ignoring pauses)
+      const started = new Date(m.playedAt).getTime();
+      const elapsedMs = Date.now() - started;
+      const minute = Math.max(0, Math.floor(elapsedMs / 60000));
+
       await db.goals.put({
         id,
         matchId,
         scorerId,
+        assistId,
         team: mp.team,
-        minute: null,
+        minute,
         createdAt,
       });
       await db.matches.update(matchId, {
@@ -119,10 +125,20 @@ export async function scoreGoal({ id, matchId, scorerId, createdAt }) {
       });
       await enqueue({
         kind: "addGoal",
-        payload: { id, matchId, scorerId, team: mp.team, createdAt },
+        payload: { id, matchId, scorerId, assistId, team: mp.team, minute, createdAt },
       });
     }
   );
+}
+
+export async function setAssist(goalId, assistId) {
+  const goal = await db.goals.get(goalId);
+  if (!goal) return;
+  await db.goals.update(goalId, { assistId });
+  await enqueue({
+    kind: "updateGoalAssist",
+    payload: { goalId, assistId },
+  });
 }
 
 export async function undoLastGoalOf(matchId, scorerId) {
@@ -178,25 +194,36 @@ export async function getMatch(matchId) {
   if (!match) return null;
 
   const goalCount = {};
+  const assistCount = {};
   goals.forEach((g) => {
     goalCount[g.scorerId] = (goalCount[g.scorerId] || 0) + 1;
+    if (g.assistId) assistCount[g.assistId] = (assistCount[g.assistId] || 0) + 1;
   });
 
-  const roster = await db.roster.bulkGet(mps.map((mp) => mp.playerId));
+  // Also need roster entries for any assist IDs (may be teammates already in mps, usually yes)
+  const assistIds = Array.from(new Set(goals.map((g) => g.assistId).filter(Boolean)));
+  const allIds = Array.from(new Set([...mps.map((mp) => mp.playerId), ...assistIds]));
+  const rosterEntries = await db.roster.bulkGet(allIds);
   const byId = new Map();
-  roster.forEach((p) => p && byId.set(p.id, p));
+  rosterEntries.forEach((p) => p && byId.set(p.id, p));
 
   const enrich = (mp) => ({
     id: mp.playerId,
     name: byId.get(mp.playerId)?.name ?? "?",
     goals: goalCount[mp.playerId] ?? 0,
+    assists: assistCount[mp.playerId] ?? 0,
     team: mp.team,
   });
+  const enrichedGoals = goals.map((g) => ({
+    ...g,
+    scorerName: byId.get(g.scorerId)?.name ?? "?",
+    assistName: g.assistId ? byId.get(g.assistId)?.name ?? null : null,
+  }));
   return {
     match,
     teamA: mps.filter((mp) => mp.team === "A").map(enrich),
     teamB: mps.filter((mp) => mp.team === "B").map(enrich),
-    goals,
+    goals: enrichedGoals,
   };
 }
 
