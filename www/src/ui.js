@@ -23,6 +23,7 @@ import {
   kickSync,
   subscribeSync,
 } from "./sync.js";
+import { unlockAudio, playGoalSound, playUndoSound } from "./audio.js";
 
 // ---------------- helpers ----------------
 
@@ -325,14 +326,25 @@ function confirmEnd() {
   document.body.appendChild(overlay);
 }
 
+// Module-level guard: after a long-press fires, any pointerup within
+// `SUPPRESS_TAP_MS` is swallowed. This prevents the "release adds a goal"
+// bug caused by renderLive() destroying the original button mid-press.
+let suppressTapUntil = 0;
+const SUPPRESS_TAP_MS = 700;
+
 function attachLongPress(btn, onTap, onLong) {
   let timer = null;
   let didLong = false;
-  const start = () => {
+  const start = (e) => {
     didLong = false;
     btn.classList.add("pressing");
+    // Capture pointer so pointerup reliably fires on this element
+    if (e && e.pointerId !== undefined && btn.setPointerCapture) {
+      try { btn.setPointerCapture(e.pointerId); } catch (_) {}
+    }
     timer = setTimeout(() => {
       didLong = true;
+      suppressTapUntil = Date.now() + SUPPRESS_TAP_MS;
       btn.classList.remove("pressing");
       if (navigator.vibrate) navigator.vibrate(30);
       onLong();
@@ -345,7 +357,7 @@ function attachLongPress(btn, onTap, onLong) {
   const end = (e) => {
     clearTimeout(timer);
     btn.classList.remove("pressing");
-    if (!didLong) onTap();
+    if (!didLong && Date.now() >= suppressTapUntil) onTap();
     e.preventDefault();
   };
   btn.addEventListener("pointerdown", start);
@@ -373,7 +385,9 @@ function buildPlayerTile(p) {
   attachLongPress(btn,
     async () => {
       try {
+        unlockAudio();
         if (navigator.vibrate) navigator.vibrate(12);
+        playGoalSound();
         pendingGoalAnim = { team: p.team };
         await scoreGoal({ id: createId(), matchId: currentMatchId, scorerId: p.id, createdAt: new Date().toISOString() });
         kickSync();
@@ -385,6 +399,7 @@ function buildPlayerTile(p) {
       try {
         const removed = await undoLastGoalOf(currentMatchId, p.id);
         if (!removed) return;
+        playUndoSound();
         kickSync();
         renderLive();
       } catch (e) { alert(e.message || e); }

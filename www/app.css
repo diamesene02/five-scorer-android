@@ -528,28 +528,50 @@ input:focus { border-color: var(--a-500); }
 
 /* ========================= LIVE — LANDSCAPE ========================= */
 @media (orientation: landscape) {
-  .scorebar { top: 36px; padding: 8px var(--sp-4); }
-  .scoreboard .score { font-size: 56px; }
-  .scoreboard .sep { font-size: 36px; }
-  .live-teams { display: flex; gap: var(--sp-1); padding: var(--sp-1); }
+  .topbar { padding: 3px var(--sp-3); min-height: 26px; }
+  .topbar-left { font-size: 10px; gap: 6px; }
+  .live-dot { width: 6px; height: 6px; }
+  .match-clock { font-size: 11px; }
+  .btn-fin { font-size: 10px; padding: 3px 9px; letter-spacing: 0.14em; }
+  .sync-dot { width: 8px; height: 8px; }
+
+  .scorebar { top: 26px; padding: 4px var(--sp-3); gap: var(--sp-3); }
+  .scoreboard { gap: 8px; }
+  .scoreboard .score { font-size: 40px; }
+  .scoreboard .sep { font-size: 26px; }
+  .team-chip { font-size: 10px; padding: 3px 8px; }
+
+  .live-teams {
+    display: flex;
+    gap: 3px;
+    padding: 3px;
+    min-height: 0;
+  }
   .live-teams .team-col {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: var(--sp-1);
+    gap: 2px;
   }
   .live-teams .team-header {
-    font-size: 10px;
+    font-size: 9px;
     font-weight: 700;
     letter-spacing: 0.18em;
     text-transform: uppercase;
-    padding: 2px var(--sp-2);
+    padding: 0 var(--sp-2);
     color: var(--ink-2);
+    line-height: 14px;
   }
   .live-teams .team-header.A { color: var(--a-400); }
   .live-teams .team-header.B { color: var(--b-400); }
-  .topbar { padding: 4px var(--sp-4); min-height: 30px; }
-  .scorebar { top: 30px; }
+
+  /* Compact tile in landscape: 44px so 5 fit on a 390px viewport */
+  .tile { min-height: 44px; border-radius: 8px; }
+  .tile-body { padding: 0 8px; gap: 6px; }
+  .tile-name { font-size: 13px; }
+  .tile-goals { font-size: 14px; }
+  .tile-ball { width: 10px; height: 10px; }
+  .tile-plus { flex-basis: 48px; font-size: 15px; }
 }
 
 /* ========================= TAGS ========================= */
