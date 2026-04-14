@@ -56,10 +56,20 @@ async function replayOp(op) {
     }
     case "createMatch": {
       const { id, playedAt, teamAName, teamBName, teamA, teamB } = op.payload;
+      const now = new Date().toISOString();
       const { error: e1 } = await supabase
         .from("Match")
         .upsert(
-          { id, playedAt, teamAName, teamBName, scoreA: 0, scoreB: 0, status: "LIVE" },
+          {
+            id,
+            playedAt,
+            teamAName,
+            teamBName,
+            scoreA: 0,
+            scoreB: 0,
+            status: "LIVE",
+            updatedAt: now,
+          },
           { onConflict: "id" }
         );
       if (e1) throw e1;
@@ -105,7 +115,7 @@ async function replayOp(op) {
       const { matchId, mvpId } = op.payload;
       const { error } = await supabase
         .from("Match")
-        .update({ status: "FINISHED", mvpId })
+        .update({ status: "FINISHED", mvpId, updatedAt: new Date().toISOString() })
         .eq("id", matchId);
       if (error) throw error;
       return;
@@ -134,7 +144,7 @@ async function refreshDenormScore(matchId) {
     .eq("team", "B");
   await supabase
     .from("Match")
-    .update({ scoreA: a ?? 0, scoreB: b ?? 0 })
+    .update({ scoreA: a ?? 0, scoreB: b ?? 0, updatedAt: new Date().toISOString() })
     .eq("id", matchId);
 }
 

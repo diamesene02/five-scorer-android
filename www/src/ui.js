@@ -404,10 +404,45 @@ function confirmEnd() {
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
   overlay.appendChild(
     el("div", { class: "confirm-box" }, [
-      el("h2", {}, "Terminer ce match ?"),
-      el("div", { class: "row" }, [
-        el("button", { class: "btn ghost", onclick: () => overlay.remove() }, "Annuler"),
+      el("h2", {}, "Fin du match"),
+      el("p", { class: "muted", style: "margin:0 0 16px" }, "Terminer et sauvegarder, ou annuler tout ?"),
+      el("div", { class: "row", style: "gap: 8px" }, [
+        el("button", { class: "btn ghost", onclick: () => overlay.remove() }, "Retour"),
+        el("button", {
+          class: "btn",
+          style: "background: var(--bg-2); color: var(--live); border: 1px solid var(--live)",
+          onclick: () => { overlay.remove(); confirmCancelMatch(); },
+        }, "Annuler match"),
         el("button", { class: "btn red", onclick: () => { overlay.remove(); goMvp(currentMatchId); } }, "Terminer"),
+      ]),
+    ])
+  );
+  document.body.appendChild(overlay);
+}
+
+function confirmCancelMatch() {
+  const overlay = el("div", { class: "confirm-overlay" });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.appendChild(
+    el("div", { class: "confirm-box" }, [
+      el("h2", {}, "Annuler ce match ?"),
+      el("p", { class: "muted", style: "margin:0 0 16px" }, "Toutes les données du match seront supprimées. Irréversible."),
+      el("div", { class: "row", style: "gap: 8px" }, [
+        el("button", { class: "btn ghost", onclick: () => overlay.remove() }, "Retour"),
+        el("button", {
+          class: "btn red",
+          onclick: async () => {
+            overlay.remove();
+            try {
+              await deleteMatchLocal(currentMatchId);
+              kickSync();
+              currentMatchId = null;
+              goSetup();
+            } catch (e) {
+              alert("Erreur : " + (e.message || e));
+            }
+          },
+        }, "Oui, annuler"),
       ]),
     ])
   );
@@ -604,9 +639,45 @@ async function renderMvp() {
   );
 }
 async function confirmFinish(mvpId) {
-  await finishMatch(currentMatchId, mvpId);
-  kickSync();
-  goDone(currentMatchId);
+  // Final confirmation dialog with match summary before sending to server
+  const data = await getMatch(currentMatchId);
+  if (!data) return;
+  const { match } = data;
+  const mvpPlayer = mvpId ? [...data.teamA, ...data.teamB].find((p) => p.id === mvpId) : null;
+
+  const overlay = el("div", { class: "confirm-overlay" });
+  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
+  overlay.appendChild(
+    el("div", { class: "confirm-box", style: "max-width: 360px" }, [
+      el("h2", {}, "Envoyer le résultat ?"),
+      el("div", { style: "margin: 8px 0 16px; text-align:center" }, [
+        el("div", { style: "font-family: var(--font-mono); font-size: 32px; font-weight: 800; letter-spacing: -0.02em" },
+          `${match.teamAName}  ${match.scoreA} : ${match.scoreB}  ${match.teamBName}`),
+        mvpPlayer
+          ? el("div", { style: "margin-top: 6px; font-size: 13px; color: var(--ink-1)" }, `⭐ MVP : ${mvpPlayer.name}`)
+          : el("div", { style: "margin-top: 6px; font-size: 13px; color: var(--ink-2)" }, "Sans MVP"),
+      ]),
+      el("p", { class: "muted", style: "margin:0 0 16px; font-size: 12px" },
+        "Le résultat sera envoyé sur le site et visible pour tous."),
+      el("div", { class: "row", style: "gap: 8px" }, [
+        el("button", { class: "btn ghost", onclick: () => overlay.remove() }, "Revenir"),
+        el("button", {
+          class: "btn primary",
+          onclick: async () => {
+            overlay.remove();
+            try {
+              await finishMatch(currentMatchId, mvpId);
+              kickSync();
+              goDone(currentMatchId);
+            } catch (e) {
+              alert("Erreur : " + (e.message || e));
+            }
+          },
+        }, "Envoyer"),
+      ]),
+    ])
+  );
+  document.body.appendChild(overlay);
 }
 
 // ---------------- Done / Recap ----------------
