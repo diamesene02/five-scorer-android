@@ -192,11 +192,11 @@ async function renderHome() {
     el("span", { class: "kicker" }, "La maison du Five du jeudi")
   );
   heroSection.appendChild(
-    el("h1", { class: "display-xl", style: "margin: 14px 0 10px" }, [
-      el("span", {}, "Marque vite."),
-      el("br"),
-      el("span", { style: "color: var(--lime)" }, "Regarde mieux."),
-    ])
+    el("h1", {
+      class: "display-xl edge-top",
+      style: "margin: 14px 0 10px",
+      html: "Marque <em>vite</em>.<br>Regarde <span style='color: var(--lime); text-shadow: 0 0 32px var(--lime-glow)'>mieux</span>.",
+    })
   );
   heroSection.appendChild(
     el("p", {
