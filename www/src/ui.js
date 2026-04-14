@@ -6,6 +6,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import { APP_PIN } from "./config.js";
 import {
+  db,
   getRoster,
   addLocalGuest,
   createMatch,
@@ -26,6 +27,7 @@ import {
 } from "./sync.js";
 import { unlockAudio, playGoalSound, playUndoSound, isSoundEnabled, toggleSound } from "./audio.js";
 import { renderShareCard } from "./shareCard.js";
+import { computeMvp } from "./mvp.js";
 
 // ---------------- helpers ----------------
 
@@ -81,7 +83,7 @@ function renderSyncBadge() {
 
 // ---------------- Routing ----------------
 
-const screens = ["pin", "setup", "live", "mvp", "done", "history"];
+const screens = ["pin", "home", "setup", "live", "mvp", "done", "history"];
 function show(name) {
   for (const s of screens) {
     const node = document.getElementById("screen-" + s);
@@ -119,11 +121,263 @@ function tryPin() {
   const v = $("#pin-input").value.trim();
   if (!APP_PIN || v === APP_PIN) {
     sessionStorage.setItem("fs-unlocked", "1");
-    return goSetup();
+    return goHome();
   }
   $("#pin-error").textContent = "Code invalide";
   $("#pin-input").value = "";
   $("#pin-input").focus();
+}
+
+// ---------------- Home (dashboard) ----------------
+
+async function goHome() {
+  updateTopbarForLive(false);
+  show("home");
+  await renderHome();
+}
+
+async function renderHome() {
+  const root = $("#screen-home");
+  root.textContent = "";
+
+  // Load all matches, enrich
+  const matches = await listMatches(30);
+  const finished = matches.filter((m) => m.status === "FINISHED");
+  const live = matches.find((m) => m.status === "LIVE") || null;
+  const hero = finished[0];
+  const rest = finished.slice(1, 6);
+
+  // Aggregate season stats
+  let totalGoals = 0;
+  const scorerStats = {};
+  for (const m of finished) {
+    totalGoals += (m.scoreA || 0) + (m.scoreB || 0);
+  }
+  // Compute top scorers from local goal data
+  const allGoals = await db.goals.toArray();
+  const matchIdSet = new Set(finished.map((m) => m.id));
+  for (const g of allGoals) {
+    if (!matchIdSet.has(g.matchId)) continue;
+    scorerStats[g.scorerId] = scorerStats[g.scorerId] || { goals: 0, assists: 0 };
+    scorerStats[g.scorerId].goals++;
+    if (g.assistId) {
+      scorerStats[g.assistId] = scorerStats[g.assistId] || { goals: 0, assists: 0 };
+      scorerStats[g.assistId].assists++;
+    }
+  }
+  const scorerIds = Object.keys(scorerStats);
+  const rosterList = scorerIds.length ? await db.roster.bulkGet(scorerIds) : [];
+  const rosterById = new Map();
+  rosterList.forEach((p) => p && rosterById.set(p.id, p));
+  const topScorers = scorerIds
+    .map((id) => ({
+      id,
+      name: rosterById.get(id)?.name || "?",
+      goals: scorerStats[id].goals,
+      assists: scorerStats[id].assists,
+      ga: scorerStats[id].goals + scorerStats[id].assists,
+    }))
+    .filter((x) => rosterById.has(x.id))
+    .sort((a, b) => b.ga - a.ga || b.goals - a.goals)
+    .slice(0, 5);
+
+  const now = new Date();
+  const weekday = now.toLocaleDateString("fr-FR", { weekday: "long" }).toUpperCase();
+  const dateShort = now.toLocaleDateString("fr-FR", {
+    day: "2-digit",
+    month: "short",
+  }).toUpperCase();
+  const seq = String(finished.length + 1).padStart(3, "0");
+
+  // ---- Masthead ----
+  root.appendChild(
+    el("section", { class: "home-hero" }, [
+      el("div", { class: "row", style: "margin-bottom: 4px; gap: 8px" }, [
+        el("span", { class: "label-tech" }, "\u2691"),
+        el("span", { class: "seq" }, "N\u00B0" + seq),
+        el("span", { class: "label-tech" }, "\u00B7"),
+        el("span", { class: "seq" }, weekday),
+        el("span", { class: "label-tech", style: "margin-left: auto" }, dateShort),
+      ]),
+      el("div", { style: "line-height:1; margin-top: 4px" }, [
+        el("span", { class: "display-xl", style: "display: inline" }, "Five"),
+        el("span", {
+          style: "margin-left: 10px; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--ink-1); vertical-align: middle",
+        }, "Scorer"),
+      ]),
+      el("p", {
+        style: "margin: 10px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2); line-height: 1.5",
+      }, "Console de notation \u00B7 Match op\u00E9rations"),
+    ])
+  );
+
+  // ---- Live strap ----
+  if (live) {
+    const lastScore = `${live.scoreA} : ${live.scoreB}`;
+    const strap = el("div", {
+      class: "home-live-strap",
+      onclick: () => { currentMatchId = live.id; goLive(live.id); },
+    }, [
+      el("span", { class: "live-marker" }, "En cours"),
+      el("span", {
+        class: "num",
+        style: "font-size: 22px; font-weight: 500",
+      }, lastScore),
+      el("span", {
+        style: "font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--amber)",
+      }, "Reprendre \u2192"),
+    ]);
+    root.appendChild(strap);
+  }
+
+  // ---- Season stats row ----
+  root.appendChild(
+    el("div", { class: "home-stats-row" }, [
+      el("div", { class: "home-stat" }, [
+        el("div", { class: "val" }, String(finished.length)),
+        el("div", { class: "lbl" }, "Matchs"),
+      ]),
+      el("div", { class: "home-stat" }, [
+        el("div", { class: "val accent" }, String(totalGoals)),
+        el("div", { class: "lbl" }, "Buts"),
+      ]),
+      el("div", { class: "home-stat" }, [
+        el("div", { class: "val" }, finished.length ? (totalGoals / finished.length).toFixed(1) : "—"),
+        el("div", { class: "lbl" }, "Moy."),
+      ]),
+    ])
+  );
+
+  // ---- Last match poster ----
+  if (hero) {
+    const winA = hero.scoreA > hero.scoreB;
+    const winB = hero.scoreB > hero.scoreA;
+    const draw = hero.scoreA === hero.scoreB;
+    const lastMatchData = await getMatch(hero.id);
+    const mvpPlayer = hero.mvpId
+      ? [...(lastMatchData?.teamA || []), ...(lastMatchData?.teamB || [])].find((p) => p.id === hero.mvpId)
+      : null;
+
+    const section = el("section", { class: "home-section" });
+    section.appendChild(
+      el("div", { class: "home-section-title" }, [
+        el("span", { class: "label-tech" }, "— Dernier match"),
+        el("span", { class: "seq" },
+          new Date(hero.playedAt).toLocaleDateString("fr-FR", {
+            weekday: "short", day: "2-digit", month: "short",
+          }).toUpperCase()),
+      ])
+    );
+    const posterWrap = el("div", { onclick: () => goDone(hero.id), style: "cursor: pointer" });
+    posterWrap.appendChild(
+      el("div", { class: "home-last-match" }, [
+        el("div", { style: "text-align: right" }, [
+          el("div", { class: "team-label A" }, hero.teamAName.toUpperCase()),
+          el("div", {
+            class: "score-big " + (winA ? "win" : draw ? "neutral" : "lose"),
+          }, String(hero.scoreA)),
+        ]),
+        el("div", { class: "vs" }, "vs"),
+        el("div", { style: "text-align: left" }, [
+          el("div", { class: "team-label B" }, hero.teamBName.toUpperCase()),
+          el("div", {
+            class: "score-big " + (winB ? "win" : draw ? "neutral" : "lose"),
+          }, String(hero.scoreB)),
+        ]),
+      ])
+    );
+    if (mvpPlayer) {
+      posterWrap.appendChild(
+        el("div", { class: "home-mvp-line" }, [
+          el("div", { class: "lbl" }, "MVP"),
+          el("div", { class: "name" }, mvpPlayer.name),
+        ])
+      );
+    }
+    section.appendChild(posterWrap);
+    root.appendChild(section);
+  }
+
+  // ---- Top scorers ----
+  if (topScorers.length > 0) {
+    const section = el("section", { class: "home-section home-top-scorers" });
+    section.appendChild(
+      el("div", { class: "home-section-title" }, [
+        el("span", { class: "label-tech" }, "— Top buteurs"),
+        el("button", {
+          class: "more",
+          onclick: () => alert("Classement complet : voir sur le site web"),
+        }, "Complet \u2192"),
+      ])
+    );
+    topScorers.forEach((p, i) => {
+      section.appendChild(
+        el("div", { class: "leader" }, [
+          el("span", {
+            style: "font-family: var(--font-mono); font-size: 10px; color: var(--ink-2); min-width: 18px",
+          }, String(i + 1).padStart(2, "0")),
+          el("span", {
+            style: "font-family: var(--font-mono); font-size: 12px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.04em",
+          }, p.name),
+          el("span", { class: "leader-dots" }),
+          el("span", {
+            style: "font-family: var(--font-mono); font-size: 11px; color: var(--ink-2)",
+          }, `${p.goals}B·${p.assists}P`),
+          el("span", {
+            style: "font-family: var(--font-mono); font-size: 14px; font-weight: 600; color: var(--amber); min-width: 24px; text-align: right",
+          }, String(p.ga)),
+        ])
+      );
+    });
+    root.appendChild(section);
+  }
+
+  // ---- Recent matches ----
+  if (rest.length > 0) {
+    const section = el("section", { class: "home-section" });
+    section.appendChild(
+      el("div", { class: "home-section-title" }, [
+        el("span", { class: "label-tech" }, "— Archives"),
+        el("button", { class: "more", onclick: goHistory }, "Tout \u2192"),
+      ])
+    );
+    rest.forEach((m, i) => {
+      const winA = m.scoreA > m.scoreB;
+      const winB = m.scoreB > m.scoreA;
+      section.appendChild(
+        el("div", {
+          class: "home-recent-row",
+          onclick: () => goDone(m.id),
+        }, [
+          el("span", { class: "seq-col" }, String(i + 2).padStart(3, "0")),
+          el("span", { class: "date-col" },
+            new Date(m.playedAt).toLocaleDateString("fr-FR", { day: "2-digit", month: "short" })),
+          el("span", { class: "teams-col" },
+            `${m.teamAName} \u00D7 ${m.teamBName}`),
+          el("span", { class: "score-col" }, [
+            el("span", { class: winA ? "win" : "lose" }, String(m.scoreA)),
+            el("span", { class: "sep" }, ":"),
+            el("span", { class: winB ? "win" : "lose" }, String(m.scoreB)),
+          ]),
+        ])
+      );
+    });
+    root.appendChild(section);
+  }
+
+  // ---- Actions ----
+  root.appendChild(
+    el("div", { class: "home-actions" }, [
+      el("button", { class: "btn primary big", onclick: goSetup }, "\u2691  Nouveau match"),
+      el("button", { class: "btn ghost big", onclick: goHistory }, "Archives"),
+    ])
+  );
+
+  // ---- Footer ----
+  root.appendChild(
+    el("footer", { class: "home-footer" },
+      "Five Scorer \u00B7 Console v2 \u00B7 Jeudi 21H")
+  );
 }
 
 // ---------------- Setup ----------------
@@ -169,11 +423,11 @@ async function renderSetup() {
       ]),
       el("div", { id: "tallies", class: "muted center" }, ""),
       el("div", { class: "row gap" }, [
-        el("button", { class: "btn ghost", onclick: () => goHistory() }, "📋 Historique"),
+        el("button", { class: "btn ghost", onclick: goHome }, "← Accueil"),
         el("button", {
           class: "btn primary big",
           onclick: startMatch,
-        }, "Lancer le match"),
+        }, "⚑  Lancer"),
       ]),
     ])
   );
@@ -394,9 +648,7 @@ async function showAssistPicker(goalId, scorer) {
   overlay.appendChild(box);
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
   document.body.appendChild(overlay);
-
-  // Auto-dismiss after 5s
-  setTimeout(() => { if (document.getElementById("assist-picker") === overlay) overlay.remove(); }, 5000);
+  // No auto-dismiss: user picks, skips, or taps outside
 }
 
 function confirmEnd() {
@@ -616,22 +868,48 @@ async function renderMvp() {
   const data = await getMatch(currentMatchId);
   if (!data) return goSetup();
   const root = $("#screen-mvp");
-  root.innerHTML = "";
-  const all = [...data.teamA, ...data.teamB].sort((a, b) => a.name.localeCompare(b.name));
+  root.textContent = "";
+
+  const all = [...data.teamA, ...data.teamB];
+  const suggested = computeMvp({ match: data.match, players: all });
+
+  // Pre-select the suggested MVP if nothing picked yet
+  if (mvpSel == null && suggested) {
+    mvpSel = suggested.id;
+  }
+
+  const sorted = [...all].sort((a, b) => a.name.localeCompare(b.name));
   const grid = el("div", { class: "mvp-grid" });
-  all.forEach((p) => {
-    grid.appendChild(
-      el("button", {
-        class: "mvp-cell" + (mvpSel === p.id ? " sel" : ""),
-        onclick: () => { mvpSel = mvpSel === p.id ? null : p.id; renderMvp(); },
-      }, p.name)
-    );
+  sorted.forEach((p) => {
+    const isSel = mvpSel === p.id;
+    const isSuggested = suggested && suggested.id === p.id;
+    const cell = el("button", {
+      class: "mvp-cell" + (isSel ? " sel" : "") + (isSuggested ? " suggested" : ""),
+      onclick: () => { mvpSel = mvpSel === p.id ? null : p.id; renderMvp(); },
+    }, [
+      isSuggested ? el("span", { class: "mvp-badge" }, "\u2B50 Sugg\u00E9r\u00E9") : null,
+      el("div", { class: "mvp-name" }, p.name),
+      p.goals || p.assists ? el("div", { class: "mvp-stat" },
+        [
+          p.goals ? `${p.goals}B` : "",
+          p.assists ? `${p.assists}P` : "",
+        ].filter(Boolean).join(" · ")
+      ) : null,
+    ]);
+    grid.appendChild(cell);
   });
+
   root.appendChild(
     el("div", { class: "wrap" }, [
-      el("h1", {}, "MVP du match ?"),
+      el("div", { class: "kicker", style: "margin-top: 16px" }, "Fin du match"),
+      el("h1", { style: "margin: 6px 0 4px; font-size: 28px; letter-spacing: -0.02em" }, "Qui est MVP ?"),
+      suggested
+        ? el("p", { class: "muted", style: "margin: 0 0 12px" },
+            "Suggestion : " + suggested.name +
+            " (" + suggested.goals + "B" + (suggested.assists ? " · " + suggested.assists + "P" : "") + ")")
+        : el("p", { class: "muted", style: "margin: 0 0 12px" }, "Aucun buteur — choisis manuellement ou passe."),
       grid,
-      el("div", { class: "row gap" }, [
+      el("div", { class: "row gap", style: "margin-top: 12px" }, [
         el("button", { class: "btn ghost big", onclick: () => confirmFinish(null) }, "Pas de MVP"),
         el("button", { class: "btn primary big", onclick: () => confirmFinish(mvpSel) }, "Valider"),
       ]),
@@ -774,8 +1052,8 @@ async function goDone(matchId) {
         el("button", { class: "btn primary big", onclick: () => rematch(data) }, "\uD83D\uDD04 Rematch"),
       ]),
       el("div", { class: "row gap" }, [
-        el("button", { class: "btn ghost", onclick: goSetup }, "Nouveau match"),
-        el("button", { class: "btn ghost", onclick: goHistory }, "Historique"),
+        el("button", { class: "btn ghost", onclick: goHome }, "← Accueil"),
+        el("button", { class: "btn ghost", onclick: goHistory }, "Archives"),
       ]),
     ])
   );
@@ -835,7 +1113,7 @@ async function goHistory() {
               ])
             )
           ),
-      el("button", { class: "btn ghost big", onclick: goSetup }, "← Retour"),
+      el("button", { class: "btn ghost big", onclick: goHome }, "← Accueil"),
     ])
   );
 }
@@ -853,11 +1131,17 @@ export async function boot() {
   if (!app.dataset.built) {
     app.innerHTML = `
       <header class="topbar">
-        <div class="brand">⚽ Five Scorer</div>
-        <button id="sync-badge" class="sync-badge ok">…</button>
+        <div class="brand brand-mono">
+          <span class="serif">Five</span>
+          <span class="tag-txt">Scorer</span>
+        </div>
+        <div class="topbar-end">
+          <button id="sync-badge" class="sync-badge ok">…</button>
+        </div>
       </header>
       <main>
         <section id="screen-pin" class="screen"></section>
+        <section id="screen-home" class="screen"></section>
         <section id="screen-setup" class="screen"></section>
         <section id="screen-live" class="screen"></section>
         <section id="screen-mvp" class="screen"></section>
@@ -876,8 +1160,7 @@ export async function boot() {
     show("pin");
     renderPin();
   } else {
-    show("setup");
-    await renderSetup();
+    await goHome();
   }
 
   // Hydrate roster from network when possible (background)
