@@ -49,6 +49,7 @@ function escapeHtml(s) {
 }
 
 let currentMatchId = null;
+let pendingGoalAnim = null; // { team: 'A' | 'B' } — set just before a render that reflects a new goal
 
 // ---------------- Sync badge ----------------
 
@@ -60,9 +61,17 @@ function renderSyncBadge() {
     if (!s.online) { cls = "off"; txt = "Hors ligne"; }
     else if (s.syncing) { cls = "warn"; txt = "Sync…"; }
     else if (s.pending > 0) { cls = "warn"; txt = `${s.pending} à envoyer`; }
-    badge.className = "sync-badge " + cls;
-    badge.textContent = txt;
-    badge.title = s.lastError || "";
+
+    // Preserve dot vs badge style (dot during live, badge elsewhere)
+    const isDot = badge.classList.contains("sync-dot");
+    if (isDot) {
+      badge.className = "sync-dot " + cls;
+      badge.textContent = "";
+    } else {
+      badge.className = "sync-badge " + cls;
+      badge.textContent = txt;
+    }
+    badge.title = s.lastError || txt;
   });
   badge.onclick = () => drainOutbox();
 }
@@ -242,20 +251,62 @@ async function goLive(matchId) {
   await renderLive();
 }
 
+let matchStartTs = null;
+let clockInterval = null;
+
 function updateTopbarForLive(isLive) {
-  const existing = document.getElementById("btn-fin");
-  if (existing) existing.remove();
+  const topbar = $(".topbar");
+  const existingBtn = document.getElementById("btn-fin");
+  if (existingBtn) existingBtn.remove();
+  const existingLive = topbar.querySelector(".topbar-left");
+  if (existingLive) existingLive.remove();
+
+  if (clockInterval) { clearInterval(clockInterval); clockInterval = null; }
+
   if (isLive) {
-    const topbar = $(".topbar");
+    // Left: LIVE dot + clock
+    const clockEl = el("span", { class: "match-clock", id: "match-clock" }, "00:00");
+    const left = el("div", { class: "topbar-left" }, [
+      el("span", { class: "live-dot" }),
+      el("span", {}, "LIVE"),
+      clockEl,
+    ]);
+    topbar.insertBefore(left, topbar.firstChild);
+
+    matchStartTs = Date.now();
+    const tick = () => {
+      const s = Math.floor((Date.now() - matchStartTs) / 1000);
+      const mm = String(Math.floor(s / 60)).padStart(2, "0");
+      const ss = String(s % 60).padStart(2, "0");
+      clockEl.textContent = `${mm}:${ss}`;
+    };
+    tick();
+    clockInterval = setInterval(tick, 1000);
+
+    // Right: Fin + sync dot
     let endDiv = topbar.querySelector(".topbar-end");
     if (!endDiv) {
       endDiv = el("div", { class: "topbar-end" });
       const badge = $("#sync-badge");
+      if (badge) { badge.className = "sync-dot"; badge.textContent = ""; }
       topbar.appendChild(endDiv);
-      endDiv.appendChild(badge);
+      if (badge) endDiv.appendChild(badge);
     }
     const btn = el("button", { class: "btn-fin", id: "btn-fin", onclick: confirmEnd }, "Fin");
     endDiv.insertBefore(btn, endDiv.firstChild);
+
+    // Hide brand on live
+    const brand = topbar.querySelector(".brand");
+    if (brand) brand.style.display = "none";
+  } else {
+    // Restore brand + sync badge style
+    const brand = topbar.querySelector(".brand");
+    if (brand) brand.style.display = "";
+    const badge = $("#sync-badge");
+    if (badge) {
+      badge.className = "sync-badge ok";
+      if (!badge.textContent || badge.textContent === "") badge.textContent = "\u2026";
+    }
   }
 }
 
@@ -303,13 +354,27 @@ function attachLongPress(btn, onTap, onLong) {
   btn.addEventListener("pointercancel", cancel);
 }
 
+const BALL_SVG = '<svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2Zm0 2a7.94 7.94 0 0 1 5 1.78l-1.58 1.14-3.42-1.1Zm-7.8 6.24L5.9 9l1.3 3.94-1 .73-2-2.9Zm4.16 8.26-1.1-3.4L9 12.5l3 2.2v1.7Zm3.64.44v-1.76l3-2.2 1.74 1.04-1.1 3.4a7.93 7.93 0 0 1-3.64-.48Zm6.07-2.18-2-2.9 1.3-3.94 1.7 1.24a7.93 7.93 0 0 1-1 5.6Z"/></svg>';
+
 function buildPlayerTile(p) {
   const btn = el("button", { class: "tile-plus" }, "+1");
-  const goalsEl = el("div", { class: "tile-goals" }, p.goals > 0 ? String(p.goals) : "");
+  const goalsEl = el("span", { class: "tile-goals" }, p.goals > 0 ? String(p.goals) : "");
+
+  const goalsWrap = el("div", { class: "tile-goals-wrap" }, [
+    p.goals > 0 ? el("span", { class: "tile-ball", html: BALL_SVG }) : null,
+    goalsEl,
+  ].filter(Boolean));
+
+  const body = el("div", { class: "tile-body" }, [
+    el("div", { class: "tile-name" }, p.name),
+    goalsWrap,
+  ]);
 
   attachLongPress(btn,
     async () => {
       try {
+        if (navigator.vibrate) navigator.vibrate(12);
+        pendingGoalAnim = { team: p.team };
         await scoreGoal({ id: createId(), matchId: currentMatchId, scorerId: p.id, createdAt: new Date().toISOString() });
         kickSync();
         renderLive();
@@ -326,11 +391,10 @@ function buildPlayerTile(p) {
     }
   );
 
-  return el("div", { class: "tile " + p.team }, [
-    el("div", { class: "tile-name" }, p.name),
-    goalsEl,
-    btn,
-  ]);
+  // Layout: accent bar position depends on team (A=left, B=right)
+  const accent = el("div", { class: "tile-accent" });
+  const parts = p.team === "A" ? [accent, body, btn] : [btn, body, accent];
+  return el("div", { class: "tile " + p.team }, parts);
 }
 
 async function renderLive() {
@@ -342,16 +406,24 @@ async function renderLive() {
   if (match.status === "FINISHED") return goDone(currentMatchId);
 
   root.textContent = "";
+
+  const aLead = match.scoreA > match.scoreB;
+  const bLead = match.scoreB > match.scoreA;
+  const scoreA = el("span", { class: "score" + (aLead ? " leading A" : "") }, String(match.scoreA));
+  const scoreB = el("span", { class: "score" + (bLead ? " leading B" : "") }, String(match.scoreB));
+
   root.appendChild(
     el("header", { class: "scorebar" }, [
-      el("div", { class: "col" }, [
-        el("div", { class: "tn-a" }, match.teamAName),
-        el("div", { class: "score" }, String(match.scoreA)),
+      el("div", { class: "scorebar-team A" }, [
+        el("div", { class: "team-chip A" }, match.teamAName),
       ]),
-      el("div", { class: "sep" }, "\u2014"),
-      el("div", { class: "col" }, [
-        el("div", { class: "tn-b" }, match.teamBName),
-        el("div", { class: "score" }, String(match.scoreB)),
+      el("div", { class: "scoreboard" }, [
+        scoreA,
+        el("span", { class: "sep" }, ":"),
+        scoreB,
+      ]),
+      el("div", { class: "scorebar-team B" }, [
+        el("div", { class: "team-chip B" }, match.teamBName),
       ]),
     ])
   );
@@ -374,6 +446,19 @@ async function renderLive() {
     const grid = el("div", { class: "live-grid" });
     [...sortedA, ...sortedB].forEach((p) => grid.appendChild(buildPlayerTile(p)));
     root.appendChild(el("div", { class: "wrap" }, grid));
+  }
+
+  // Fire goal animations if a goal was just scored
+  if (pendingGoalAnim) {
+    const team = pendingGoalAnim.team;
+    pendingGoalAnim = null;
+    requestAnimationFrame(() => {
+      const scoreEl = team === "A" ? scoreA : scoreB;
+      if (scoreEl) {
+        scoreEl.classList.add("goaled");
+        setTimeout(() => scoreEl.classList.remove("goaled"), 600);
+      }
+    });
   }
 }
 
