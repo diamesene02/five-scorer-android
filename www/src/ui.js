@@ -11,7 +11,6 @@ import {
   addLocalGuest,
   createMatch,
   scoreGoal,
-  setAssist,
   undoLastGoalOf,
   finishMatch,
   getMatch,
@@ -154,12 +153,8 @@ async function renderHome() {
   const matchIdSet = new Set(finished.map((m) => m.id));
   for (const g of allGoals) {
     if (!matchIdSet.has(g.matchId)) continue;
-    scorerStats[g.scorerId] = scorerStats[g.scorerId] || { goals: 0, assists: 0 };
+    scorerStats[g.scorerId] = scorerStats[g.scorerId] || { goals: 0 };
     scorerStats[g.scorerId].goals++;
-    if (g.assistId) {
-      scorerStats[g.assistId] = scorerStats[g.assistId] || { goals: 0, assists: 0 };
-      scorerStats[g.assistId].assists++;
-    }
   }
   const scorerIds = Object.keys(scorerStats);
   const rosterList = scorerIds.length ? await db.roster.bulkGet(scorerIds) : [];
@@ -170,11 +165,9 @@ async function renderHome() {
       id,
       name: rosterById.get(id)?.name || "?",
       goals: scorerStats[id].goals,
-      assists: scorerStats[id].assists,
-      ga: scorerStats[id].goals + scorerStats[id].assists,
     }))
     .filter((x) => rosterById.has(x.id))
-    .sort((a, b) => b.ga - a.ga || b.goals - a.goals)
+    .sort((a, b) => b.goals - a.goals)
     .slice(0, 5);
 
   const lastMatchData = hero ? await getMatch(hero.id) : null;
@@ -327,7 +320,7 @@ async function renderHome() {
         el("span", { class: "kicker" }, "Top buteurs"),
         el("span", {
           style: "font-size: 10px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase; color: var(--ink-2)",
-        }, "G+A"),
+        }, "Buts"),
       ])
     );
 
@@ -336,7 +329,7 @@ async function renderHome() {
     });
     topScorers.forEach((p, i) => {
       const row = el("div", {
-        style: "display: grid; grid-template-columns: 26px 1fr auto auto; align-items: center; gap: 10px; padding: 11px 14px;" +
+        style: "display: grid; grid-template-columns: 26px 1fr auto; align-items: center; gap: 10px; padding: 11px 14px;" +
                (i < topScorers.length - 1 ? " border-bottom: 1px solid var(--stroke)" : ""),
       }, [
         el("span", {
@@ -346,11 +339,8 @@ async function renderHome() {
           style: "font-weight: 700; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap",
         }, p.name),
         el("span", {
-          style: "font-family: var(--font-mono); font-size: 11px; color: var(--ink-2)",
-        }, `${p.goals}B·${p.assists}P`),
-        el("span", {
           style: "font-family: var(--font-mono); font-size: 16px; font-weight: 800; color: var(--lime); min-width: 24px; text-align: right",
-        }, String(p.ga)),
+        }, String(p.goals)),
       ]);
       list.appendChild(row);
     });
@@ -661,50 +651,6 @@ function togglePause() {
   }
 }
 
-async function showAssistPicker(goalId, scorer) {
-  const data = await getMatch(currentMatchId);
-  if (!data) return;
-  const teammates = (scorer.team === "A" ? data.teamA : data.teamB).filter((p) => p.id !== scorer.id);
-  if (teammates.length === 0) return;
-
-  const overlay = el("div", { class: "assist-overlay", id: "assist-picker" });
-  const box = el("div", { class: "assist-box" });
-  box.appendChild(
-    el("div", { class: "assist-title" }, [
-      el("span", { class: "tag " + scorer.team }, "BUT"),
-      el("span", {}, " " + scorer.name + " — passeur ?"),
-    ])
-  );
-
-  const chips = el("div", { class: "assist-chips" });
-  teammates.forEach((p) => {
-    chips.appendChild(
-      el("button", {
-        class: "assist-chip " + scorer.team,
-        onclick: async () => {
-          try {
-            await setAssist(goalId, p.id);
-            kickSync();
-          } catch (_) {}
-          overlay.remove();
-        },
-      }, p.name)
-    );
-  });
-  box.appendChild(chips);
-
-  const skipBtn = el("button", {
-    class: "btn ghost assist-skip",
-    onclick: () => overlay.remove(),
-  }, "Aucune passe");
-  box.appendChild(skipBtn);
-
-  overlay.appendChild(box);
-  overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
-  document.body.appendChild(overlay);
-  // No auto-dismiss: user picks, skips, or taps outside
-}
-
 function confirmEnd() {
   const overlay = el("div", { class: "confirm-overlay" });
   overlay.addEventListener("click", (e) => { if (e.target === overlay) overlay.remove(); });
@@ -822,8 +768,6 @@ function buildPlayerTile(p) {
         await scoreGoal({ id: goalId, matchId: currentMatchId, scorerId: p.id, createdAt: new Date().toISOString() });
         kickSync();
         renderLive();
-        // Show assist picker (non-blocking, auto-dismisses)
-        showAssistPicker(goalId, p);
       } catch (e) { alert(e.message || e); }
     },
     async () => {
@@ -943,12 +887,7 @@ async function renderMvp() {
     }, [
       isSuggested ? el("span", { class: "mvp-badge" }, "\u2B50 Sugg\u00E9r\u00E9") : null,
       el("div", { class: "mvp-name" }, p.name),
-      p.goals || p.assists ? el("div", { class: "mvp-stat" },
-        [
-          p.goals ? `${p.goals}B` : "",
-          p.assists ? `${p.assists}P` : "",
-        ].filter(Boolean).join(" · ")
-      ) : null,
+      p.goals ? el("div", { class: "mvp-stat" }, `${p.goals}B`) : null,
     ]);
     grid.appendChild(cell);
   });
@@ -959,8 +898,7 @@ async function renderMvp() {
       el("h1", { style: "margin: 6px 0 4px; font-size: 28px; letter-spacing: -0.02em" }, "Qui est MVP ?"),
       suggested
         ? el("p", { class: "muted", style: "margin: 0 0 12px" },
-            "Suggestion : " + suggested.name +
-            " (" + suggested.goals + "B" + (suggested.assists ? " · " + suggested.assists + "P" : "") + ")")
+            "Suggestion : " + suggested.name + " (" + suggested.goals + "B)")
         : el("p", { class: "muted", style: "margin: 0 0 12px" }, "Aucun buteur — choisis manuellement ou passe."),
       grid,
       el("div", { class: "row gap", style: "margin-top: 12px" }, [
@@ -1025,17 +963,12 @@ async function goDone(matchId) {
   const { match, teamA, teamB, goals } = data;
   const all = [...teamA, ...teamB];
   const goalCount = {};
-  const assistCount = {};
   goals.forEach((g) => {
     goalCount[g.scorerId] = (goalCount[g.scorerId] || 0) + 1;
-    if (g.assistId) assistCount[g.assistId] = (assistCount[g.assistId] || 0) + 1;
   });
   const scorers = all
     .filter((p) => goalCount[p.id])
     .sort((a, b) => goalCount[b.id] - goalCount[a.id]);
-  const assisters = all
-    .filter((p) => assistCount[p.id])
-    .sort((a, b) => assistCount[b.id] - assistCount[a.id]);
   const mvp = match.mvpId ? all.find((p) => p.id === match.mvpId) : null;
 
   const winA = match.scoreA > match.scoreB;
@@ -1061,9 +994,6 @@ async function goDone(matchId) {
           el("span", { class: "timeline-minute" }, (g.minute != null ? g.minute + "'" : "—")),
           el("span", { class: "timeline-ball" }, "\u26BD"),
           el("span", { class: "timeline-scorer" }, g.scorerName || "?"),
-          g.assistName
-            ? el("span", { class: "timeline-assist" }, "(p. " + g.assistName + ")")
-            : null,
         ]))
       )
     : el("div", { class: "muted pad" }, "Aucun but.");
@@ -1090,14 +1020,6 @@ async function goDone(matchId) {
             " " + p.name,
           ]),
           el("strong", { class: "goal-dots" }, "\u2022".repeat(Math.min(goalCount[p.id], 5)) + (goalCount[p.id] > 5 ? " +" + (goalCount[p.id] - 5) : "")),
-        ]))
-      ) : null,
-
-      assisters.length ? el("div", { class: "section-title" }, "Passes d\u00E9cisives") : null,
-      assisters.length ? el("div", { class: "event-list" },
-        assisters.map((p) => el("div", { class: "ev" }, [
-          el("span", {}, p.name),
-          el("strong", {}, String(assistCount[p.id])),
         ]))
       ) : null,
 

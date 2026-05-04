@@ -84,24 +84,15 @@ async function replayOp(op) {
       return;
     }
     case "addGoal": {
-      const { id, matchId, scorerId, team, createdAt, assistId, minute } = op.payload;
+      const { id, matchId, scorerId, team, createdAt, minute } = op.payload;
       const { error: eg } = await supabase
         .from("Goal")
         .upsert(
-          { id, matchId, scorerId, team, createdAt, assistId: assistId ?? null, minute: minute ?? null },
+          { id, matchId, scorerId, team, createdAt, minute: minute ?? null },
           { onConflict: "id" }
         );
       if (eg) throw eg;
       await refreshDenormScore(matchId);
-      return;
-    }
-    case "updateGoalAssist": {
-      const { goalId, assistId } = op.payload;
-      const { error } = await supabase
-        .from("Goal")
-        .update({ assistId: assistId ?? null })
-        .eq("id", goalId);
-      if (error) throw error;
       return;
     }
     case "removeGoal": {

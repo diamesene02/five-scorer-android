@@ -819,64 +819,6 @@ input:focus { border-color: var(--a-500); }
   .icon-btn { width: 22px; height: 22px; font-size: 11px; }
 }
 
-/* ========================= ASSIST PICKER ========================= */
-.assist-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 150;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(7,9,15,0.65);
-  backdrop-filter: blur(6px);
-  animation: fadeIn 0.15s ease-out;
-}
-.assist-box {
-  background: var(--bg-1);
-  border: 1px solid var(--stroke-hi);
-  border-radius: var(--r-xl);
-  padding: var(--sp-4);
-  max-width: 90vw;
-  box-shadow: 0 30px 80px -20px rgba(0,0,0,0.8);
-  animation: popIn 0.2s cubic-bezier(0.2,0.8,0.2,1.1);
-}
-.assist-title {
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: var(--sp-3);
-  text-align: center;
-}
-.assist-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: var(--sp-2);
-  justify-content: center;
-}
-.assist-chip {
-  font-family: var(--font-ui);
-  font-weight: 700;
-  font-size: 13px;
-  padding: 8px 14px;
-  border-radius: var(--r-md);
-  border: 1px solid var(--stroke);
-  background: var(--bg-2);
-  color: var(--ink-0);
-  cursor: pointer;
-  transition: background 0.12s, transform 0.12s, border-color 0.12s;
-}
-.assist-chip:active { transform: scale(0.96); }
-.assist-chip.A { border-color: rgba(34,197,94,0.4); }
-.assist-chip.A:active { background: var(--a-500); color: white; }
-.assist-chip.B { border-color: rgba(56,189,248,0.4); }
-.assist-chip.B:active { background: var(--b-500); color: white; }
-.assist-skip {
-  display: block;
-  width: 100%;
-  font-size: 12px;
-  padding: 6px;
-  color: var(--ink-2);
-}
 
 /* ========================= RECAP ========================= */
 .recap-wrap { max-width: 520px; margin: 0 auto; }
@@ -967,7 +909,6 @@ input:focus { border-color: var(--a-500); }
   min-width: 36px;
 }
 .timeline-scorer { font-weight: 700; flex: 1; }
-.timeline-assist { color: var(--ink-1); font-size: 12px; }
 .timeline-ball { opacity: 0.8; }
 
 .podium-medal { display: inline-block; margin-right: 4px; }

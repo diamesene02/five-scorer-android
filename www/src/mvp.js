@@ -1,4 +1,4 @@
-// Auto-compute MVP based on goals + assists + team result.
+// Auto-compute MVP based on goals + team result.
 // See /lib/mvp.ts for the identical web version.
 
 export function computeMvp({ match, players }) {
@@ -8,16 +8,15 @@ export function computeMvp({ match, players }) {
 
   const ranked = players
     .map((p) => {
-      const contrib = (p.goals || 0) + (p.assists || 0);
-      const base = (p.goals || 0) * 2 + (p.assists || 0) * 1.5;
+      const goals = p.goals || 0;
+      const base = goals * 2;
       const won = (p.team === "A" && winA) || (p.team === "B" && winB);
-      const bonus = contrib === 0 ? 0 : won ? 2 : draw ? 1 : 0;
+      const bonus = goals === 0 ? 0 : won ? 2 : draw ? 1 : 0;
       return {
         id: p.id,
         name: p.name,
         team: p.team,
-        goals: p.goals || 0,
-        assists: p.assists || 0,
+        goals,
         score: base + bonus,
       };
     })
@@ -26,7 +25,6 @@ export function computeMvp({ match, players }) {
       (a, b) =>
         b.score - a.score ||
         b.goals - a.goals ||
-        b.assists - a.assists ||
         a.name.localeCompare(b.name)
     );
 
