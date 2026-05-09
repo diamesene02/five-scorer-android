@@ -137,11 +137,25 @@ function renderSyncBadge() {
 // ---------------- Routing ----------------
 
 const screens = ["pin", "home", "setup", "live", "mvp", "done", "history"];
+let currentScreen = null;
 function show(name) {
+  const isTransition = currentScreen !== name;
   for (const s of screens) {
     const node = document.getElementById("screen-" + s);
-    if (node) node.classList.toggle("active", s === name);
+    if (!node) continue;
+    node.classList.toggle("active", s === name);
+    if (s === name && isTransition) {
+      // Fire entry animation only when entering a new screen, never on
+      // internal re-renders within the same screen (otherwise every tap
+      // would replay the slideUp and flash black for 320ms).
+      node.classList.remove("fs-enter");
+      void node.offsetWidth; // force reflow
+      node.classList.add("fs-enter");
+    } else {
+      node.classList.remove("fs-enter");
+    }
   }
+  currentScreen = name;
   window.scrollTo(0, 0);
 }
 

@@ -696,17 +696,20 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
   text-align: right;
 }
 
-/* ========================= ENTRY ANIMATIONS ========================= */
+/* ========================= ENTRY ANIMATIONS =========================
+   Fired only on screen transitions (one-shot via .fs-enter class added
+   in JS), NOT on every render. Otherwise tapping a jersey re-triggers
+   the whole-screen fade and flashes black for 320ms. */
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.screen.active > * { animation: slideUp 0.32s ease-out both; }
-.screen.active > *:nth-child(1) { animation-delay: 0.00s; }
-.screen.active > *:nth-child(2) { animation-delay: 0.04s; }
-.screen.active > *:nth-child(3) { animation-delay: 0.08s; }
-.screen.active > *:nth-child(4) { animation-delay: 0.12s; }
-.screen.active > *:nth-child(5) { animation-delay: 0.16s; }
+.screen.fs-enter > * { animation: slideUp 0.32s ease-out both; }
+.screen.fs-enter > *:nth-child(1) { animation-delay: 0.00s; }
+.screen.fs-enter > *:nth-child(2) { animation-delay: 0.04s; }
+.screen.fs-enter > *:nth-child(3) { animation-delay: 0.08s; }
+.screen.fs-enter > *:nth-child(4) { animation-delay: 0.12s; }
+.screen.fs-enter > *:nth-child(5) { animation-delay: 0.16s; }
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
