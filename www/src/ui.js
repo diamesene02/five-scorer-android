@@ -138,6 +138,7 @@ function renderSyncBadge() {
 
 const screens = ["pin", "home", "setup", "live", "mvp", "done", "history"];
 let currentScreen = null;
+const FS_ENTER_MS = 700; // longest stagger delay (0.16s) + duration (0.32s) + buffer
 function show(name) {
   const isTransition = currentScreen !== name;
   for (const s of screens) {
@@ -145,12 +146,15 @@ function show(name) {
     if (!node) continue;
     node.classList.toggle("active", s === name);
     if (s === name && isTransition) {
-      // Fire entry animation only when entering a new screen, never on
-      // internal re-renders within the same screen (otherwise every tap
-      // would replay the slideUp and flash black for 320ms).
+      // Fire entry animation only on actual screen transitions. We must
+      // ALSO remove the class once it expires — otherwise children
+      // appended later by a re-render (e.g. tap → renderLive()) would
+      // match `.screen.fs-enter > *` and re-trigger slideUp, flashing
+      // the screen black (opacity 0 → 1) for 320ms on every tap.
       node.classList.remove("fs-enter");
-      void node.offsetWidth; // force reflow
+      void node.offsetWidth; // force reflow so animation re-fires
       node.classList.add("fs-enter");
+      setTimeout(() => node.classList.remove("fs-enter"), FS_ENTER_MS);
     } else {
       node.classList.remove("fs-enter");
     }
