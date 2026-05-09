@@ -295,10 +295,13 @@ body::after {
 
 .match-clock {
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 16px;
   color: var(--ink-0);
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
 }
+.live-screen .match-clock { font-size: 18px; }
 
 .sync-dot {
   width: 10px;
@@ -696,17 +699,20 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
   text-align: right;
 }
 
-/* ========================= ENTRY ANIMATIONS ========================= */
+/* ========================= ENTRY ANIMATIONS =========================
+   Fired only on screen transitions (one-shot via .fs-enter class added in
+   JS), NOT on every render — otherwise tapping a jersey would re-trigger
+   the whole-screen fade and flash black for 320ms. */
 @keyframes slideUp {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-.screen.active > * { animation: slideUp 0.32s ease-out both; }
-.screen.active > *:nth-child(1) { animation-delay: 0.00s; }
-.screen.active > *:nth-child(2) { animation-delay: 0.04s; }
-.screen.active > *:nth-child(3) { animation-delay: 0.08s; }
-.screen.active > *:nth-child(4) { animation-delay: 0.12s; }
-.screen.active > *:nth-child(5) { animation-delay: 0.16s; }
+.screen.fs-enter > * { animation: slideUp 0.26s ease-out both; }
+.screen.fs-enter > *:nth-child(1) { animation-delay: 0.00s; }
+.screen.fs-enter > *:nth-child(2) { animation-delay: 0.04s; }
+.screen.fs-enter > *:nth-child(3) { animation-delay: 0.08s; }
+.screen.fs-enter > *:nth-child(4) { animation-delay: 0.12s; }
+.screen.fs-enter > *:nth-child(5) { animation-delay: 0.16s; }
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
@@ -856,12 +862,31 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
 .sb-team.B { color: var(--b-500); }
 .sb-name {
   font-family: var(--font-ui);
-  font-weight: 800;
-  font-size: 16px;
+  font-weight: 900;
+  font-size: 18px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  display: block;
+  position: relative;
+  padding-bottom: 6px;
 }
+.sb-name::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 24px;
+  background: var(--ink-2);
+}
+.sb-name.A::after { background: var(--a-500); box-shadow: 0 0 8px var(--a-glow); }
+.sb-name.B::after { background: var(--b-500); box-shadow: 0 0 8px var(--b-glow); }
+.sb-side.right .sb-name::after { left: auto; right: 0; }
 .sb-scores {
   display: flex;
   align-items: baseline;
@@ -924,23 +949,25 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
 .pitch-col-head.A { color: var(--a-500); }
 .pitch-col-head.B { color: var(--b-500); }
 
-/* Jersey tile */
+/* Jersey tile — pro spec: full-width thumb target, name + goals,
+   no decorative initials column. */
 .jersey {
   position: relative;
   display: grid;
-  grid-template-columns: 38px 1fr 36px;
+  grid-template-columns: 1fr auto;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 12px;
+  padding: 14px 16px;
   background: var(--chalk);
   color: var(--panel);
   border: var(--bw) solid var(--line);
-  min-height: 56px;
+  min-height: 72px;
   cursor: pointer;
-  transition: transform 0.1s, box-shadow 0.15s;
+  transition: transform 0.08s, background 0.12s, border-color 0.12s;
   overflow: hidden;
   -webkit-user-select: none;
   user-select: none;
+  text-align: left;
 }
 .jersey.B {
   background: var(--panel);
@@ -988,43 +1015,59 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
 
 .jersey > * { position: relative; z-index: 1; }
 
-.j-num {
-  font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 22px;
-  letter-spacing: -0.04em;
-  text-align: center;
-  color: var(--a-500);
+.j-body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
 }
-.jersey.B .j-num { color: var(--b-500); }
 .j-name {
   font-family: var(--font-ui);
   font-weight: 800;
-  font-size: 13px;
-  letter-spacing: 0.04em;
+  font-size: 16px;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  line-height: 1.1;
 }
+.j-hint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+  margin-top: 4px;
+  display: block;
+}
+.jersey.A .j-hint,
+.jersey:not(.B) .j-hint { color: rgba(11,14,10,0.45); }
 .j-goals {
   font-family: var(--font-mono);
-  font-weight: 800;
-  font-size: 16px;
-  letter-spacing: -0.02em;
+  font-weight: 900;
+  font-size: 28px;
+  letter-spacing: -0.04em;
   text-align: center;
   background: var(--panel);
   color: var(--a-500);
-  height: 30px;
+  min-width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: var(--bw) solid var(--panel);
-  min-width: 30px;
   font-variant-numeric: tabular-nums;
 }
-.jersey.B .j-goals { background: var(--chalk); color: var(--b-500); border-color: var(--chalk); }
-.j-goals:empty { visibility: hidden; }
+.jersey.B .j-goals { background: var(--chalk); color: var(--b-500); }
+.j-goals:empty::before {
+  content: "+";
+  color: var(--ink-2);
+  opacity: 0.45;
+  font-weight: 400;
+  font-size: 26px;
+}
+.jersey.B .j-goals:empty::before { color: var(--ink-1); opacity: 0.35; }
 
 /* Goal flash + ghost +1 */
 .jersey.flash {
@@ -1060,9 +1103,7 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
 
 /* Live action footer */
 .live-actions {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: var(--sp-2);
+  display: block;
   padding: var(--sp-3) var(--sp-4) calc(var(--sp-4) + var(--sa-b));
   border-top: var(--bw) solid var(--line);
   background: var(--panel);
@@ -1108,6 +1149,27 @@ input.field::placeholder { color: var(--ink-2); font-weight: 500; }
   align-self: center;
   text-align: center;
 }
+
+/* Icon-only topbar button */
+.icon-btn {
+  width: 32px;
+  height: 32px;
+  border: var(--bw) solid var(--line-soft);
+  background: transparent;
+  color: var(--ink-1);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+}
+.icon-btn:active { transform: scale(0.94); background: rgba(255,255,255,0.06); }
+.icon-btn.live { border-color: rgba(239,63,50,.5); color: var(--live); }
+.icon-btn.live:active { background: rgba(239,63,50,.14); }
 
 /* Empty state copy */
 .fs-empty {

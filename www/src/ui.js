@@ -137,11 +137,25 @@ function renderSyncBadge() {
 // ---------------- Routing ----------------
 
 const screens = ["pin", "home", "setup", "live", "mvp", "done", "history"];
+let currentScreen = null;
 function show(name) {
+  const isTransition = currentScreen !== name;
   for (const s of screens) {
     const node = document.getElementById("screen-" + s);
-    if (node) node.classList.toggle("active", s === name);
+    if (!node) continue;
+    node.classList.toggle("active", s === name);
+    // Fire entry animation only when transitioning into a new screen,
+    // never on internal re-renders within the same screen.
+    if (s === name && isTransition) {
+      node.classList.remove("fs-enter");
+      // Force reflow so the animation re-fires when we re-add the class.
+      void node.offsetWidth;
+      node.classList.add("fs-enter");
+    } else {
+      node.classList.remove("fs-enter");
+    }
   }
+  currentScreen = name;
   window.scrollTo(0, 0);
 }
 
@@ -713,13 +727,14 @@ function attachLongPress(btn, onTap, onHold) {
 
 function buildJersey(p, team) {
   const goalsTxt = p.goals > 0 ? String(p.goals) : "";
-  const initials = abbr(p.name, 2);
   const node = el("button", {
     class: "jersey " + team,
     type: "button",
   }, [
-    el("span", { class: "j-num" }, initials),
-    el("span", { class: "j-name" }, p.name.toUpperCase()),
+    el("div", { class: "j-body" }, [
+      el("span", { class: "j-name" }, p.name.toUpperCase()),
+      el("span", { class: "j-hint" }, p.goals > 0 ? `${p.goals} BUT${p.goals > 1 ? "S" : ""}` : "TAP +1 · LONG = ANNULER"),
+    ]),
     el("span", { class: "j-goals" }, goalsTxt),
   ]);
 
@@ -776,29 +791,28 @@ async function renderLive() {
   const aLeads = match.scoreA > match.scoreB;
   const bLeads = match.scoreB > match.scoreA;
 
-  // Topbar
+  // Topbar — minimal: live state + clock + pause | sound + sync
+  // (FIN button moved to a single primary CTA at the bottom for thumb-reach)
   root.appendChild(
     el("header", { class: "topbar" }, [
       el("div", { class: "left" }, [
         el("span", { class: "live-dot" }),
-        el("span", { class: "kicker", id: "live-label" }, "LIVE"),
+        el("span", { class: "kicker", id: "live-label" }, clockPausedAt ? "PAUSE" : "LIVE"),
         el("span", { class: "match-clock", "data-clock": "1" }, fmtClock(matchSeconds())),
-        el("button", {
-          class: "btn tiny ghost",
-          onclick: togglePause,
-          style: { padding: "4px 8px", letterSpacing: "0" },
-          title: "Pause",
-        }, clockPausedAt ? "▶" : "⏸"),
       ]),
       el("div", { class: "center" }, []),
       el("div", { class: "right" }, [
         el("button", {
-          class: "btn tiny ghost",
+          class: "icon-btn",
+          onclick: togglePause,
+          title: clockPausedAt ? "Reprendre" : "Pause",
+        }, clockPausedAt ? "▶" : "❙❙"),
+        el("button", {
+          class: "icon-btn",
           onclick: (e) => {
             const on = toggleSound();
             if (e.currentTarget) e.currentTarget.textContent = on ? "🔊" : "🔇";
           },
-          style: { padding: "4px 8px", letterSpacing: "0" },
           title: "Son",
         }, isSoundEnabled() ? "🔊" : "🔇"),
         el("button", {
@@ -806,21 +820,12 @@ async function renderLive() {
           id: "sync-badge",
           title: "Sync",
         }),
-        el("button", {
-          class: "btn tiny",
-          style: {
-            background: "rgba(239,63,50,.14)",
-            borderColor: "rgba(239,63,50,.5)",
-            color: "#fca5a5",
-          },
-          onclick: confirmEnd,
-        }, "FIN"),
       ]),
     ])
   );
   rebindSync();
 
-  // Scorebar
+  // Scorebar — team name + giant score, no redundant DOM/EXT prefix
   const scoreA = el("span", {
     class: "sb-num A" + (aLeads ? " lead" : ""),
   }, String(match.scoreA));
@@ -832,8 +837,7 @@ async function renderLive() {
     el("div", { class: "scorebar" }, [
       el("div", { class: "scorebar-grid" }, [
         el("div", { class: "sb-side" }, [
-          el("span", { class: "sb-team A" }, "DOM"),
-          el("span", { class: "sb-name" }, match.teamAName.toUpperCase()),
+          el("span", { class: "sb-name A" }, match.teamAName.toUpperCase()),
         ]),
         el("div", { class: "sb-scores" }, [
           scoreA,
@@ -841,14 +845,16 @@ async function renderLive() {
           scoreB,
         ]),
         el("div", { class: "sb-side right" }, [
-          el("span", { class: "sb-team B" }, "EXT"),
-          el("span", { class: "sb-name" }, match.teamBName.toUpperCase()),
+          el("span", { class: "sb-name B" }, match.teamBName.toUpperCase()),
         ]),
       ]),
       el("div", { class: "scorebar-meta" }, [
-        el("span", { class: "live" }, [el("span", { class: "live-dot" }), "EN DIRECT"]),
+        el("span", { class: "live" }, [
+          el("span", { class: "live-dot" }),
+          clockPausedAt ? "PAUSE" : "EN DIRECT",
+        ]),
         el("span", {}, `${match.scoreA + match.scoreB} BUTS`),
-        el("span", {}, `${teamA.length}V${teamB.length}`),
+        el("span", {}, `${teamA.length} VS ${teamB.length}`),
       ]),
     ])
   );
@@ -872,11 +878,10 @@ async function renderLive() {
 
   root.appendChild(
     el("div", { class: "live-actions" }, [
-      el("span", { class: "live-hint" }, "TAP +1 · APPUI LONG = ANNULER"),
       el("button", {
-        class: "btn danger big",
+        class: "btn danger big block",
         onclick: confirmEnd,
-      }, "COUP DE SIFFLET FINAL"),
+      }, "✕ COUP DE SIFFLET FINAL"),
     ])
   );
 
