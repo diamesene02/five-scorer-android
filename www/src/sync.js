@@ -117,6 +117,10 @@ async function replayOp(op) {
       if (error) throw error;
       return;
     }
+    case "updateGoalAssist":
+      // Obsolete op kind (assists removed). Silently drop any stale entries
+      // left over in an older client's outbox.
+      return;
     default:
       throw new Error("Unknown op: " + op.kind);
   }
