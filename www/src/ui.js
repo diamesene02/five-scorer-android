@@ -320,7 +320,7 @@ async function renderHome() {
         "5",
       ]),
       el("div", { class: "home-meta" },
-        `${matches.length ? finished.length + " MATCHS · " : ""}LE JEUDI SOIR`),
+        `${matches.length ? finished.length + " MATCHS · " : ""}LE LUNDI SOIR`),
     ])
   );
 
