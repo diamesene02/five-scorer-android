@@ -1,5 +1,10 @@
 // Canvas renderer for match recap shareable image.
-// Draws 1080x1080 using design tokens. No external deps.
+// Draws 1080x1080 using design tokens. Bundled with Capacitor plugins
+// for native sharing on Android (Web Share API can't share files from
+// inside the WebView origin).
+
+import { Filesystem, Directory } from "@capacitor/filesystem";
+import { Share } from "@capacitor/share";
 
 const TOK = {
   bg0: "#07090F",
@@ -158,17 +163,59 @@ export async function renderShareCard({ match, teamA, teamB, goals, mvpName }) {
   return new Promise((resolve) => canvas.toBlob((b) => resolve(b), "image/png", 0.92));
 }
 
+// Convert a Blob to a base64 data string (no `data:` prefix), needed by
+// the Capacitor Filesystem plugin.
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result;
+      // result is "data:image/png;base64,XXXX" — keep only the base64 part
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
+}
+
 export async function shareMatchImage(data) {
   const blob = await renderShareCard(data);
   if (!blob) return;
-  const file = new File([blob], `five-scorer-${Date.now()}.png`, { type: "image/png" });
+  const fileName = `five-scorer-${Date.now()}.png`;
+
+  // Inside the Capacitor WebView, navigator.share with files is blocked
+  // by origin policy. Detect Capacitor and use its Filesystem + Share
+  // plugins instead.
+  const cap = window.Capacitor;
+  if (cap?.isNativePlatform && cap.isNativePlatform()) {
+    try {
+      const base64 = await blobToBase64(blob);
+      const written = await Filesystem.writeFile({
+        path: fileName,
+        data: base64,
+        directory: Directory.Cache,
+      });
+      await Share.share({
+        title: "Match Five Scorer",
+        url: written.uri,
+        dialogTitle: "Partager le match",
+      });
+      return;
+    } catch (e) {
+      console.error("Capacitor share failed", e);
+      // Fall through to web fallbacks below
+    }
+  }
+
+  // Web fallback path (browser, or Capacitor share failed)
+  const file = new File([blob], fileName, { type: "image/png" });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try {
       await navigator.share({ files: [file], title: "Match Five Scorer" });
       return;
     } catch (_) {}
   }
-  // Fallback: download
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
