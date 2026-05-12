@@ -139,10 +139,9 @@ export async function renderShareCard({ match, teamA, teamB, goals, mvpName }) {
     ctx.fillStyle = TOK.ink0;
     ctx.fillText(`${medal}  ${p.name}`, 140, y);
     const count = goalCount[p.id];
-    const dots = count >= 4 ? "•".repeat(3) + ` +${count - 3}` : "•".repeat(count);
     ctx.fillStyle = TOK.gold;
-    ctx.font = '800 36px "JetBrains Mono", ui-monospace, monospace';
-    ctx.fillText(dots, 560, y);
+    ctx.font = '800 40px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillText(String(count), 560, y);
     ctx.fillStyle = TOK.ink1;
     ctx.font = '600 26px "Space Grotesk", system-ui, sans-serif';
     const teamName = p.team === "A" ? match.teamAName : match.teamBName;
